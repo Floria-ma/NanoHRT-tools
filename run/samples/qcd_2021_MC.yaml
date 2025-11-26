@@ -1,0 +1,38 @@
+qcd-mg:
+  - QCD-4Jets_HT-1000to1200_TuneCP5_13p6TeV_madgraphMLM-pythia8
+  - QCD-4Jets_HT-1200to1500_TuneCP5_13p6TeV_madgraphMLM-pythia8
+  - QCD-4Jets_HT-1500to2000_TuneCP5_13p6TeV_madgraphMLM-pythia8
+  - QCD-4Jets_HT-2000_TuneCP5_13p6TeV_madgraphMLM-pythia8
+  - QCD-4Jets_HT-200to400_TuneCP5_13p6TeV_madgraphMLM-pythia8
+  - QCD-4Jets_HT-400to600_TuneCP5_13p6TeV_madgraphMLM-pythia8
+  - QCD-4Jets_HT-600to800_TuneCP5_13p6TeV_madgraphMLM-pythia8
+  - QCD-4Jets_HT-800to1000_TuneCP5_13p6TeV_madgraphMLM-pythia8
+
+# qcd-herwig:
+# # still uses 19UL Nano
+#  - /QCD_Pt-15to7000_TuneCH3_Flat_13TeV_herwig7/RunIISummer19UL18NanoAODv2-106X_upgrade2018_realistic_v15_L1v1-v1/NANOAODSIM
+
+top:
+  - TbarBQ_t-channel_4FS_TuneCP5_13p6TeV_powheg-madspin-pythia8
+  - TbarBtoLminusNuB-s-channel-4FS_TuneCP5_13p6TeV_amcatnlo-pythia8
+  - TbarWplusto2L2Nu_TuneCP5_13p6TeV_powheg-pythia8
+  - TbarWplusto4Q_TuneCP5_13p6TeV_powheg-pythia8
+  - TbarWplustoLNu2Q_TuneCP5_13p6TeV_powheg-pythia8
+  - TBbarQ_t-channel_4FS_TuneCP5_13p6TeV_powheg-madspin-pythia8
+  - TBbartoLplusNuBbar-s-channel-4FS_TuneCP5_13p6TeV_amcatnlo-pythia8
+  - TTto2L2Nu_TuneCP5_13p6TeV_powheg-pythia8
+  - TTto4Q_TuneCP5_13p6TeV_powheg-pythia8
+  - TTtoLNu2Q_TuneCP5_13p6TeV_powheg-pythia8
+  - TWminusto2L2Nu_TuneCP5_13p6TeV_powheg-pythia8
+  - TWminusto4Q_TuneCP5_13p6TeV_powheg-pythia8
+  - TWminustoLNu2Q_TuneCP5_13p6TeV_powheg-pythia8
+
+v-qq:
+  - Wto2Q-3Jets_HT-200to400_TuneCP5_13p6TeV_madgraphMLM-pythia8
+  - Wto2Q-3Jets_HT-400to600_TuneCP5_13p6TeV_madgraphMLM-pythia8
+  - Wto2Q-3Jets_HT-600to800_TuneCP5_13p6TeV_madgraphMLM-pythia8
+  - Wto2Q-3Jets_HT-800_TuneCP5_13p6TeV_madgraphMLM-pythia8
+  - Zto2Q-4Jets_HT-200to400_TuneCP5_13p6TeV_madgraphMLM-pythia8
+  - Zto2Q-4Jets_HT-400to600_TuneCP5_13p6TeV_madgraphMLM-pythia8
+  - Zto2Q-4Jets_HT-600to800_TuneCP5_13p6TeV_madgraphMLM-pythia8
+  - Zto2Q-4Jets_HT-800_TuneCP5_13p6TeV_madgraphMLM-pythia8

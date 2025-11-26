@@ -7,7 +7,7 @@ from PhysicsTools.NanoAODTools.postprocessing.framework.datamodel import Collect
 from PhysicsTools.NanoAODTools.postprocessing.framework.eventloop import Module
 from PhysicsTools.NanoAODTools.postprocessing.tools import deltaR, closest
 
-from PhysicsTools.NanoHRTTools.helpers.ak8MassCorrectionHelper import get_corrected_sdmass
+from PhysicsTools.NanoHRTTools.helpers.ak15MassCorrectionHelper import get_corrected_sdmass
 from PhysicsTools.NanoHRTTools.helpers.n2DDTHelper import N2DDTHelper
 from PhysicsTools.NanoHRTTools.helpers.nnHelper import convert_prob
 
@@ -78,30 +78,55 @@ class HRTMCTreeProducer(Module):
         self.out.branch("gentop_w_size", "F")
 
         # AK8
-        self.out.branch("dR_gen_ak8", "F")
-        self.out.branch("ak8_pt", "F")
-        self.out.branch("ak8_eta", "F")
-        self.out.branch("ak8_phi", "F")
-        self.out.branch("ak8_sdmass", "F")
-        self.out.branch("ak8_corr_sdmass", "F")
-        self.out.branch("ak8_tau21", "F")
-        self.out.branch("ak8_tau32", "F")
-        self.out.branch("ak8_maxsubjetcsv", "F")
-        self.out.branch("ak8_doubleb", "F")
+        # self.out.branch("dR_gen_ak8", "F")
+        # self.out.branch("ak8_pt", "F")
+        # self.out.branch("ak8_eta", "F")
+        # self.out.branch("ak8_phi", "F")
+        # self.out.branch("ak8_sdmass", "F")
+        # self.out.branch("ak8_corr_sdmass", "F")
+        # self.out.branch("ak8_tau21", "F")
+        # self.out.branch("ak8_tau32", "F")
+        # self.out.branch("ak8_maxsubjetcsv", "F")
+        # self.out.branch("ak8_doubleb", "F")
 
-        self.out.branch("ak8_DeepAK8_TvsQCD", "F")
-        self.out.branch("ak8_DeepAK8_WvsQCD", "F")
-        self.out.branch("ak8_DeepAK8_ZvsQCD", "F")
-        self.out.branch("ak8_DeepAK8_HbbvsQCD", "F")
+        # self.out.branch("ak8_DeepAK8_TvsQCD", "F")
+        # self.out.branch("ak8_DeepAK8_WvsQCD", "F")
+        # self.out.branch("ak8_DeepAK8_ZvsQCD", "F")
+        # self.out.branch("ak8_DeepAK8_HbbvsQCD", "F")
 
-        self.out.branch("ak8_DeepAK8MD_TvsQCD", "F")
-        self.out.branch("ak8_DeepAK8MD_WvsQCD", "F")
-        self.out.branch("ak8_DeepAK8MD_ZvsQCD", "F")
-        self.out.branch("ak8_DeepAK8MD_ZHbbvsQCD", "F")
-        self.out.branch("ak8_DeepAK8MD_ZHccvsQCD", "F")
+        # self.out.branch("ak8_DeepAK8MD_TvsQCD", "F")
+        # self.out.branch("ak8_DeepAK8MD_WvsQCD", "F")
+        # self.out.branch("ak8_DeepAK8MD_ZvsQCD", "F")
+        # self.out.branch("ak8_DeepAK8MD_ZHbbvsQCD", "F")
+        # self.out.branch("ak8_DeepAK8MD_ZHccvsQCD", "F")
 
-        self.out.branch("ak8_ecfN2", "F")
-        self.out.branch("ak8_ecfN2DDT", "F")
+        # self.out.branch("ak8_ecfN2", "F")
+        # self.out.branch("ak8_ecfN2DDT", "F")
+
+        #AK15
+        self.out.branch("dR_gen_ak15", "F")
+        self.out.branch("ak15_pt", "F")
+        self.out.branch("ak15_eta", "F")
+        self.out.branch("ak15_phi", "F")
+        self.out.branch("ak15_sdmass", "F")
+        self.out.branch("ak15_corr_sdmass", "F")
+        self.out.branch("ak15_tau21", "F")
+        self.out.branch("ak15_tau32", "F")
+        self.out.branch("ak15_maxsubjetcsv", "F")
+        self.out.branch("ak15_doubleb", "F")
+
+        self.out.branch("ak15_ParT_TopVsQCD", "F")
+        self.out.branch("ak15_ParT_WVsQCD", "F")
+        self.out.branch("ak15_ParT_ZVsQCD", "F")
+        self.out.branch("ak15_ParT_HccVsQCD", "F")
+        self.out.branch("ak15_ParT_HbbVsQCD", "F")
+
+        self.out.branch("ak15_ParT_HccVsQCDandTop", "F")
+        self.out.branch("ak15_ParT_HbbVsQCDandTop", "F")
+
+        self.out.branch("ak15_ecfN2", "F")
+        self.out.branch("ak15_ecfN2DDT", "F")
+
 
     def _fillCommonInfo(self, event, i_parton, parton, daughters):
         self.out.fillBranch("i_evt", int(event.event))
@@ -152,49 +177,67 @@ class HRTMCTreeProducer(Module):
         return rlt
 
     def _selectJets(self, event):
-        event._allAK8jets = Collection(event, "FatJet")
-        event.ak8Subjets = Collection(event, "SubJet")  # do not sort subjets after updating!!
+        #event._allAK8jets = Collection(event, "FatJet")
+        #event.ak8Subjets = Collection(event, "SubJet")  # do not sort subjets after updating!!
+        event._allAK15jets = Collection(event, "AK15Puppi")
+        event.ak15Subjets = Collection(event, "AK15PuppiSubJet")  # do not sort subjets after updating!!
 
-        # link fatjet to subjets and recompute softdrop mass
-        for fj in event._allAK8jets:
-            fj.subjets = get_subjets(fj, event.ak8Subjets, ('subJetIdx1', 'subJetIdx2'))
-            fj.msoftdrop = get_sdmass(fj.subjets)
+        # construct AK15 p4 from (updated) subjets
+        for fj in event._allAK15jets:
+            fj.subjets = get_subjets(fj, event.ak15Subjets, ('subJetIdx1', 'subJetIdx2'))
+            fj.msoftdrop = sumP4(*fj.subjets).M()
             fj.corr_sdmass = get_corrected_sdmass(fj, fj.subjets)
             fj.n2b1ddt = self._n2helper.transform(fj.n2b1, pt=fj.pt, msd=fj.corr_sdmass)
-        event._allAK8jets = sorted(event._allAK8jets, key=lambda x: x.pt, reverse=True)  # sort by pt
+        event._allAK15jets = sorted(event._allAK15jets, key=lambda x: x.pt, reverse=True)  # sort by pt
+
+        # link fatjet to subjets and recompute softdrop mass
+        #for fj in event._allAK8jets:
+        #    fj.subjets = get_subjets(fj, event.ak8Subjets, ('subJetIdx1', 'subJetIdx2'))
+        #    fj.msoftdrop = get_sdmass(fj.subjets)
+        #    fj.corr_sdmass = get_corrected_sdmass(fj, fj.subjets)
+        #    fj.n2b1ddt = self._n2helper.transform(fj.n2b1, pt=fj.pt, msd=fj.corr_sdmass)
+        #event._allAK8jets = sorted(event._allAK8jets, key=lambda x: x.pt, reverse=True)  # sort by pt
 
     def _get_filler(self, obj):
         def filler(branch, value, default=0):
             self.out.fillBranch(branch, value if obj else default)
         return filler
 
-    def _fillAK8(self, parton, daughters, jet):
-        self.out.fillBranch("dR_gen_ak8", deltaR(parton, jet) if jet else 999)
+    def _fillAK15(self, parton, daughters, jet):
+        self.out.fillBranch("dR_gen_ak15", deltaR(parton, jet) if jet else 999)
 
         fillBranch = self._get_filler(jet)
 
-        fillBranch("ak8_pt", jet.pt, -1)
-        fillBranch("ak8_eta", jet.eta)
-        fillBranch("ak8_phi", jet.phi)
-        fillBranch("ak8_sdmass", jet.msoftdrop)
-        fillBranch("ak8_corr_sdmass", jet.corr_sdmass)
-        fillBranch("ak8_tau21", jet.tau2 / jet.tau1 if jet.tau1 > 0 else 99, 99)
-        fillBranch("ak8_tau32", jet.tau3 / jet.tau2 if jet.tau2 > 0 else 99, 99)
-        fillBranch("ak8_maxsubjetcsv", max([sj.btagCSVV2 for sj in jet.subjets]) if jet and len(jet.subjets) else -99, -99)
-        fillBranch("ak8_doubleb", jet.btagHbb, -99)
+        fillBranch("ak15_pt", jet.pt, -1)
+        fillBranch("ak15_eta", jet.eta)
+        fillBranch("ak15_phi", jet.phi)
+        fillBranch("ak15_sdmass", jet.msoftdrop)
+        fillBranch("ak15_corr_sdmass", jet.corr_sdmass)
+        fillBranch("ak15_tau21", jet.tau2 / jet.tau1 if jet.tau1 > 0 else 99, 99)
+        fillBranch("ak15_tau32", jet.tau3 / jet.tau2 if jet.tau2 > 0 else 99, 99)
+        fillBranch("ak15_maxsubjetcsv", max([sj.btagCSVV2 for sj in jet.subjets]) if jet and len(jet.subjets) else -99, -99)
+        fillBranch("ak15_doubleb", jet.btagHbb, -99)
 
-        fillBranch("ak8_DeepAK8_TvsQCD", jet.deepTag_TvsQCD)
-        fillBranch("ak8_DeepAK8_WvsQCD", jet.deepTag_WvsQCD)
-        fillBranch("ak8_DeepAK8_ZvsQCD", jet.deepTag_ZvsQCD)
+        # fillBranch("ak8_DeepAK8_TvsQCD", jet.deepTag_TvsQCD)
+        # fillBranch("ak8_DeepAK8_WvsQCD", jet.deepTag_WvsQCD)
+        # fillBranch("ak8_DeepAK8_ZvsQCD", jet.deepTag_ZvsQCD)
 
-        fillBranch("ak8_DeepAK8MD_TvsQCD", jet.deepTagMD_TvsQCD)
-        fillBranch("ak8_DeepAK8MD_WvsQCD", jet.deepTagMD_WvsQCD)
-        fillBranch("ak8_DeepAK8MD_ZvsQCD", jet.deepTagMD_ZvsQCD)
-        fillBranch("ak8_DeepAK8MD_ZHbbvsQCD", jet.deepTagMD_ZHbbvsQCD)
-        fillBranch("ak8_DeepAK8MD_ZHccvsQCD", jet.deepTagMD_ZHccvsQCD)
+        # fillBranch("ak8_DeepAK8MD_TvsQCD", jet.deepTagMD_TvsQCD)
+        # fillBranch("ak8_DeepAK8MD_WvsQCD", jet.deepTagMD_WvsQCD)
+        # fillBranch("ak8_DeepAK8MD_ZvsQCD", jet.deepTagMD_ZvsQCD)
+        # fillBranch("ak8_DeepAK8MD_ZHbbvsQCD", jet.deepTagMD_ZHbbvsQCD)
+        # fillBranch("ak8_DeepAK8MD_ZHccvsQCD", jet.deepTagMD_ZHccvsQCD)
 
-        fillBranch("ak8_ecfN2", jet.n2b1, 99)
-        fillBranch("ak8_ecfN2DDT", jet.n2b1ddt, 99)
+        fillBranch("ak15_ParT_HccVsQCD", convert_prob(jet, ['Hcc'], None, prefix='ParT_prob'))
+        fillBranch("ak15_ParT_HbbVsQCD", convert_prob(jet, ['Hbb'], None, prefix='ParT_prob'))
+        fillBranch("ak15_ParT_HccVsQCDandTop", convert_prob(jet, ['Hcc'], ['QCDbb', 'QCDb', 'QCDcc', 'QCDc', 'QCDothers', 'TopbWcs', 'TopbWqq', 'TopbWc', 'TopbWs', 'TopbWq','TopWcs', 'TopWqq'], prefix='ParT_prob'))
+        fillBranch("ak15_ParT_HbbVsQCDandTop", convert_prob(jet, ['Hbb'], ['QCDbb', 'QCDb', 'QCDcc', 'QCDc', 'QCDothers', 'TopbWcs', 'TopbWqq', 'TopbWc', 'TopbWs', 'TopbWq','TopWcs', 'TopWqq'], prefix='ParT_prob'))
+        fillBranch("ak15_ParT_TopVsQCD", convert_prob(jet, ['TopbWcs', 'TopbWqq', 'TopbWc', 'TopbWs', 'TopbWq','TopWcs', 'TopWqq'], None, prefix='ParT_prob'))
+        fillBranch("ak15_ParT_WVsQCD", convert_prob(jet, ['Hbb'], None, prefix='ParT_prob'))
+        fillBranch("ak15_ParT_ZVsQCD", convert_prob(jet, ['Hbb'], None, prefix='ParT_prob'))
+
+        fillBranch("ak15_ecfN2", jet.n2b1, 99)
+        fillBranch("ak15_ecfN2DDT", jet.n2b1ddt, 99)
 
     def endFile(self, inputFile, outputFile, inputTree, wrappedOutputTree):
         pass
@@ -297,17 +340,17 @@ class HRTMCTreeProducer(Module):
                 return ()
 
         self._selectJets(event)
-        # selection on AK8 jets
-        event.ak8jets = []
-        for fj in event._allAK8jets:
+        # selection on AK15 jets
+        event.ak15jets = []
+        for fj in event._allAK15jets:
             if fj.pt > 200 and abs(fj.eta) < 2.4 and (fj.jetId & 2):
-                event.ak8jets.append(fj)
-        ak8match = self._do_matching(genHadPartons, event.ak8jets)
+                event.ak15jets.append(fj)
+        ak15match = self._do_matching(genHadPartons, event.ak15jets)
 
         for iparton, parton in enumerate(genHadPartons):
             daughters = get_daughters(parton)
             self._fillCommonInfo(event, iparton, parton, daughters)
-            self._fillAK8(parton, daughters, ak8match[parton])
+            self._fillAK15(parton, daughters, ak15match[parton])
             self.out.fill()
 
         return False

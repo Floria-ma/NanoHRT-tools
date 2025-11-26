@@ -1,9 +1,24 @@
-import os, tarfile, tempfile, shutil
+import os
+import tempfile
+import shutil
+import itertools
+import logging
+import numpy as np
 import ROOT
 ROOT.PyConfig.IgnoreCommandLineOptions = True
 
-from PhysicsTools.NanoHRTTools.helpers.jetSmearingHelper import jetSmearer, find_and_extract_tarball
-from PhysicsTools.NanoAODTools.postprocessing.modules.jme.JetReCalibrator import JetReCalibrator
+from .utils import polarP4, p4, configLogger
+from .jetSmearingHelper import jetSmearer, find_and_extract_tarball
+
+logger = logging.getLogger('jme')
+configLogger('jme', loglevel=logging.INFO)
+
+
+def rndSeed(event, jets, extra=0):
+    seed = (event.run << 20) + (event.luminosityBlock << 10) + event.event + extra
+    if len(jets) > 0:
+        seed += int(jets[0].eta / 0.01)
+    return seed
 
 
 def _sf(vals, syst='nominal'):
@@ -17,13 +32,48 @@ def _sf(vals, syst='nominal'):
         raise ValueError('Invalid syst type: %s' % str(syst))
 
 
-def selectJetsForMET(jet):
-    return jet.pt > 15 and jet.chEmEF + jet.neEmEF < 0.9
+class JetCorrector(object):
+
+    def __init__(self, globalTag, jetType, jecPath, applyResidual=True):
+        self.jecLevels = ['L2Relative', 'L3Absolute'] if 'Puppi' in jetType else [
+            'L1FastJet', 'L2Relative', 'L3Absolute']
+        if applyResidual:
+            self.jecLevels += ['L2L3Residual']
+        self.vPar = ROOT.vector(ROOT.JetCorrectorParameters)()
+        logger.info('Init JetCorrector: %s, %s, %s', globalTag, jetType, str(self.jecLevels))
+        logger.info('Init JetCorrector: %s/%s_x_%s.txt',
+                jecPath, globalTag, jetType)
+        logger.info('Init JetCorrector:%s', self.jecLevels)        
+        for level in self.jecLevels:
+            self.vPar.push_back(ROOT.JetCorrectorParameters(os.path.join(
+                jecPath, "%s_%s_%s.txt" % (globalTag, level, jetType)), ""))
+        self.corrector = ROOT.FactorizedJetCorrector(self.vPar)
+
+    def getCorrection(self, jet, rho, level=None):
+        try:
+            raw_pt = jet.rawP4.pt()
+        except RuntimeError:
+            raw_pt = jet.pt * (1. - jet.rawFactor)
+        self.corrector.setJetPt(raw_pt)
+        self.corrector.setJetPhi(jet.phi)
+        self.corrector.setJetEta(jet.eta)
+        self.corrector.setRho(rho)
+        try:
+            self.corrector.setJetA(jet.area)
+        except RuntimeError:
+            pass
+        if level is None:
+            return self.corrector.getCorrection()
+        else:
+            idx = self.jecLevels.index(level)
+            return self.corrector.getSubCorrections()[idx]
 
 
 class JetMETCorrector(object):
 
-    def __init__(self, year, jetType="AK4PFchs", jec=False, jes=None, jes_source=None, jer='nominal', jmr=None, met_unclustered=None):
+    def __init__(
+            self, year, jetType="AK4PFchs", jec=False, jes=None, jes_source=None, jes_uncertainty_file_prefix=None,
+            jer='nominal', jmr=None, met_unclustered=None, smearMET=True, applyHEMUnc=False, jesr_extra_br=False):
         '''
         jec: re-apply jet energy correction (True|False)
         jes: Jet energy scale options
@@ -31,6 +81,7 @@ class JetMETCorrector(object):
             - 'nominal': update JES central values
             - 'up', 'down': up/down variation, using the total uncertainty
             - '[UncertaintySource]_(up|down)': up/down variation, using per source unc.
+        jes_uncertainty_file_prefix: Prefix of the JES uncertainty file, use `None` for the full set, 'Regrouped(V2)_' for the reduced set.
         jer: Jet energy resolution options
             - None: do nothing
             - 'nominal': apply nominal smearing
@@ -49,90 +100,146 @@ class JetMETCorrector(object):
         self.jec = jec
         self.jes = jes
         self.jes_source = '' if jes_source is None else jes_source
+        self.jes_uncertainty_file_prefix = '' if jes_uncertainty_file_prefix is None else jes_uncertainty_file_prefix
         self.jer = jer
         self.jmr = jmr
         self.met_unclustered = met_unclustered
+        self.correctMET = (jetType == 'AK4PFchs')  # FIXME
+        self.smearMET = smearMET
+        self.applyHEMUnc = applyHEMUnc
+        self.jesr_extra_br = jesr_extra_br
+
+        self.excludeJetsForMET = None
 
         # set up tags for each year
-        if self.year == 2016:
-            self.globalTag = 'Summer16_07Aug2017_V11_MC'
-            self.jerTag = 'Summer16_25nsV1_MC'
+        if self.year == 2015:
+            # hack, actually UL2016 preVFP (APV)
+            self.globalTag = 'Summer19UL16APV_V7_MC'
+            self.jerTag = 'Summer20UL16APV_JRV3_MC'
             self.dataTags = (
                 # set the name of the tarball with a dummy run number
-                (0, 'Summer16_07Aug2017_V11_DATA'),
+                (0, 'Summer19UL16APV_V7_DATA'),
                 # (start run number (inclusive), 'tag name')
-                (272007, 'Summer16_07Aug2017BCD_V11_DATA'),
-                (276831, 'Summer16_07Aug2017EF_V11_DATA'),
-                (278820, 'Summer16_07Aug2017GH_V11_DATA'),
+                (272007, 'Summer19UL16APV_RunBCD_V7_DATA'),
+                (276831, 'Summer19UL16APV_RunEF_V7_DATA'),
+            )
+        elif self.year == 2016:
+            # hack, actually UL2016 postVFP
+            self.globalTag = 'Summer19UL16_V7_MC'
+            self.jerTag = 'Summer20UL16_JRV3_MC'
+            self.dataTags = (
+                # set the name of the tarball with a dummy run number
+                (0, 'Summer19UL16_V7_DATA'),
+                # (start run number (inclusive), 'tag name')
+                (277772, 'Summer19UL16_RunFGH_V7_DATA'),
             )
         elif self.year == 2017:
-            self.globalTag = 'Fall17_17Nov2017_V32_MC'
-            self.jerTag = 'Fall17_V3_MC'
+            self.globalTag = 'Summer19UL17_V5_MC'
+            self.jerTag = 'Summer19UL17_JRV2_MC'
             self.dataTags = (
                 # set the name of the tarball with a dummy run number
-                (0, 'Fall17_17Nov2017_V32_DATA'),
+                (0, 'Summer19UL17_V5_DATA'),
                 # (start run number (inclusive), 'tag name')
-                (297020, 'Fall17_17Nov2017B_V32_DATA'),
-                (299337, 'Fall17_17Nov2017C_V32_DATA'),
-                (302030, 'Fall17_17Nov2017DE_V32_DATA'),
-                (304911, 'Fall17_17Nov2017F_V32_DATA'),
+                (297020, 'Summer19UL17_RunB_V5_DATA'),
+                (299337, 'Summer19UL17_RunC_V5_DATA'),
+                (302030, 'Summer19UL17_RunD_V5_DATA'),
+                (303435, 'Summer19UL17_RunE_V5_DATA'),
+                (304911, 'Summer19UL17_RunF_V5_DATA'),
             )
         elif self.year == 2018:
-            self.globalTag = 'Autumn18_V19_MC'
-            self.jerTag = 'Autumn18_V7b_MC'
+            self.globalTag = 'Summer19UL18_V5_MC'
+            self.jerTag = 'Summer19UL18_JRV2_MC'
             self.dataTags = (
                 # set the name of the tarball with a dummy run number
-                (0, 'Autumn18_V19_DATA'),
+                (0, 'Summer19UL18_V5_DATA'),
                 # (start run number (inclusive), 'tag name')
-                (315252, 'Autumn18_RunA_V19_DATA'),
-                (316998, 'Autumn18_RunB_V19_DATA'),
-                (319313, 'Autumn18_RunC_V19_DATA'),
-                (320394, 'Autumn18_RunD_V19_DATA'),
+                (315252, 'Summer19UL18_RunA_V5_DATA'),
+                (316998, 'Summer19UL18_RunB_V5_DATA'),
+                (319313, 'Summer19UL18_RunC_V5_DATA'),
+                (320394, 'Summer19UL18_RunD_V5_DATA'),
             )
+        elif self.year == 2021:
+            self.globalTag = 'Summer22_22Sep2023_V2_MC'
+            self.jerTag = 'Summer22_22Sep2023_JRV1_MC'
+            self.dataTags = (
+                # set the name of the tarball with a dummy run number
+                (0, 'Summer22_22Sep2023_RunCD_V2_DATA'),
+                # (start run number (inclusive), 'tag name')
+                (355794, 'Summer22_22Sep2023_RunCD_V2_DATA'),
+            )
+        elif self.year == 2022:
+            self.globalTag = 'Summer22EE_22Sep2023_V2_MC'
+            self.jerTag = 'Summer22EE_22Sep2023_JRV1_MC'
+            self.dataTags = (
+                # set the name of the tarball with a dummy run number
+                (0, 'Summer22EE_22Sep2023_V2_DATA'),
+                # (start run number (inclusive), 'tag name')
+                (359022, 'Summer22EE_22Sep2023_RunE_V2_DATA'),
+                (360332, 'Summer22EE_22Sep2023_RunF_V2_DATA'),
+                (362350, 'Summer22EE_22Sep2023_RunG_V2_DATA'),
+            )
+        elif self.year == 2023:
+            self.globalTag = 'Summer23Prompt23_V1_MC'
+            self.jerTag = 'Summer23Prompt23_RunCv1234_JRV1_MC'
+            self.dataTags = (
+                # set the name of the tarball with a dummy run number
+                (0, 'Summer23Prompt23_RunC_V1_DATA'),
+                # (start run number (inclusive), 'tag name')
+                (367080, 'Summer23Prompt23_RunCv123_V1_DATA'),
+                (367765, 'Summer23Prompt23_RunCv4_V1_DATA'),
+            )
+        elif self.year == 2024:
+            self.globalTag = 'Summer23BPixPrompt23_V1_MC'
+            self.jerTag = 'Summer23BPixPrompt23_RunD_JRV1_MC'
+            self.dataTags = (
+                # set the name of the tarball with a dummy run number
+                (0, 'Summer23BPixPrompt23_RunD_V1_DATA'),
+                # (start run number (inclusive), 'tag name')
+                (369803, 'Summer23BPixPrompt23_RunD_V1_DATA'),
+            )
+
         else:
             raise RuntimeError('Invalid year: %s' % (str(self.year)))
 
     def beginJob(self):
         # set up JEC
-        if self.jec or self.jes in ['up', 'down']:
+        if self.jec or self.jes in ['up', 'down'] or self.correctMET or self.jesr_extra_br:
             for library in ["libCondFormatsJetMETObjects", "libPhysicsToolsNanoAODTools"]:
                 if library not in ROOT.gSystem.GetLibraries():
-                    print("Load Library '%s'" % library.replace("lib", ""))
+                    logger.info("Load Library '%s'" % library.replace("lib", ""))
                     ROOT.gSystem.Load(library)
 
             self.jesInputFilePath = tempfile.mkdtemp()
             # extract the MC and unc files
-            find_and_extract_tarball(self.globalTag, self.jesInputFilePath)
+            find_and_extract_tarball(self.globalTag, self.jesInputFilePath,
+                                     copy_txt_with_prefix=self.jes_uncertainty_file_prefix)
 
-        # updating JEC
-        if self.jec:
-            self.jetReCalibratorMC = JetReCalibrator(globalTag=self.globalTag,
-                                                     jetFlavour=self.jetType,
-                                                     doResidualJECs=False,
-                                                     jecPath=self.jesInputFilePath,
-                                                     calculateSeparateCorrections=False,
-                                                     calculateType1METCorrection=False)
-            self.jetReCalibratorsDATA = {}
+            # updating JEC/re-correct MET
+            self.jetCorrectorMC = JetCorrector(globalTag=self.globalTag,
+                                               jetType=self.jetType,
+                                               jecPath=self.jesInputFilePath,
+                                               applyResidual=False)
+            self.jetCorrectorsDATA = {}
             for iov, tag in self.dataTags:
                 find_and_extract_tarball(tag, self.jesInputFilePath)
                 if iov > 0:
-                    self.jetReCalibratorsDATA[tag] = JetReCalibrator(globalTag=tag,
-                                                                     jetFlavour=self.jetType,
-                                                                     doResidualJECs=True,
-                                                                     jecPath=self.jesInputFilePath,
-                                                                     calculateSeparateCorrections=False,
-                                                                     calculateType1METCorrection=False)
+                    self.jetCorrectorsDATA[tag] = JetCorrector(globalTag=tag,
+                                                               jetType=self.jetType,
+                                                               jecPath=self.jesInputFilePath,
+                                                               applyResidual=True)
 
         # JES uncertainty
-        if self.jes in ['up', 'down']:
+        if self.jes in ['up', 'down'] or self.jesr_extra_br:
             if not self.jes_source:
                 # total unc.
                 self.jesUncertaintyInputFileName = self.globalTag + "_Uncertainty_" + self.jetType + ".txt"
             else:
                 # unc. by source
-                self.jesUncertaintyInputFileName = self.globalTag + "_UncertaintySources_" + self.jetType + ".txt"
+                self.jesUncertaintyInputFileName = self.jes_uncertainty_file_prefix + self.globalTag + "_UncertaintySources_" + self.jetType + ".txt"
 
-            pars = ROOT.JetCorrectorParameters(os.path.join(self.jesInputFilePath, self.jesUncertaintyInputFileName), self.jes_source)
+            pars = ROOT.JetCorrectorParameters(
+                os.path.join(self.jesInputFilePath, self.jesUncertaintyInputFileName),
+                self.jes_source)
             self.jesUncertainty = ROOT.JetCorrectionUncertainty(pars)
 
         # set up JER
@@ -148,59 +255,141 @@ class JetMETCorrector(object):
         if self.jetSmearer is not None:
             self.jetSmearer.setSeed(seed)
 
-    def correctJetAndMET(self, jets, met=None, rho=None, genjets=[], isMC=True, runNumber=None):
+    def calcT1CorrEEFix(self, jet):
+        zero = np.zeros(2, dtype='float')
+        if self.excludeJetsForMET is None or not self.excludeJetsForMET(jet):
+            return zero
+        if jet.neEmEF + jet.chEmEF > 0.9:
+            return zero
+        rawP4 = jet.rawP4 * (1 - jet.muonSubtrFactor)
+        corrP4 = rawP4 * jet._jecFactor  # FIXME: _jecFactor and _jecFactorL1 here should be the JEC used in the NanoAOD production
+        if corrP4.pt() < 15:
+            return zero
+        delta = rawP4 * jet._jecFactorL1 - corrP4
+        return np.array([delta.px(), delta.py()])
+
+    def calcT1Corr(self, jet):
+        zero = np.zeros(2, dtype='float')
+        if self.excludeJetsForMET is not None and self.excludeJetsForMET(jet):
+            return zero
+        if jet.neEmEF + jet.chEmEF > 0.9:
+            return zero
+        rawP4 = jet.rawP4 * (jet._smearFactorNominal if self.jer and self.smearMET else 1 - jet.muonSubtrFactor)
+        corrP4 = rawP4 * jet._jecFactor
+        if corrP4.pt() < 15:
+            return zero
+        delta = rawP4 * jet._jecFactorL1 - corrP4
+        if self.jer in ['up', 'down'] or self.jes in ['up', 'down'] or self.applyHEMUnc:
+            nominalP4 = jet.rawP4 * jet._jecFactor * (jet._smearFactorNominal if self.jer and self.smearMET else 1)
+            if self.jer in ['up', 'down']:
+                delta -= nominalP4 * (jet._smearFactor - jet._smearFactorNominal)
+            if self.jes in ['up', 'down']:
+                delta -= nominalP4 * (jet._jesUncFactor - 1)
+            if self.applyHEMUnc:
+                delta -= nominalP4 * (jet._HEMUncFactor - 1)
+        return np.array([delta.px(), delta.py()])
+
+    def correctJetAndMET(self, jets, lowPtJets=None, met=None, rawMET=None, defaultMET=None,
+                         rho=None, genjets=[], isMC=True, runNumber=None):
+        #print(isMC)
+        #print(self.jesr_extra_br)
+        #print(self.jer)
+        #print(self.jes)
+        assert (not isMC) or (self.jesr_extra_br and (self.jer == 'nominal' and self.jes == None)) or (not self.jesr_extra_br) #"Must run jesr_extra_br=True in nominal." #and self.jes == None))
+
         # for MET correction, use 'Jet' (corr_pt>15) and 'CorrT1METJet' (corr_pt<15) collections
         # Type-1 MET correction: https://github.com/cms-sw/cmssw/blob/master/JetMETCorrections/Type1MET/interface/PFJetMETcorrInputProducerT.h
-        # FIXME: FIX MET correction
-        # prepare to propogate corrections to MET
-        if met is not None:
-            sumJetsP4Orig = ROOT.TLorentzVector()
-            for j in jets:
-                j._forMET = selectJetsForMET(j)
-                if j._forMET:
-                    sumJetsP4Orig += j.p4()
+        if met is None:
+            lowPtJets = []
+        else:
+            for j in lowPtJets:
+                j.pt = j.rawPt
+                j.mass = 0
+                j.rawFactor = 0
+                j.neEmEF = j.chEmEF = 0
 
-        # updating JEC
-        if self.jec:
-            if isMC:
-                jetReCalibrator = self.jetReCalibratorMC
-            else:
-                tag = next(run for iov, run in reversed(self.dataTags) if iov <= runNumber)
-                jetReCalibrator = self.jetReCalibratorsDATA[tag]
-            for j in jets:
-                j.pt, j.mass = jetReCalibrator.correct(j, rho)
+        for j in itertools.chain(jets, lowPtJets):
+            # set JEC factor ( = corrPt / rawPt)
+            j.rawP4 = polarP4(j) * (1. - j.rawFactor)
+            j._jecFactor = None
+            j._jecFactorL1 = None
+            if self.jec or (isMC and met is not None):
+                if isMC:
+                    jetCorrector = self.jetCorrectorMC
+                else:
+                    tag = next(run for iov, run in reversed(self.dataTags) if iov <= runNumber)
+                    jetCorrector = self.jetCorrectorsDATA[tag]
+                j._jecFactor = jetCorrector.getCorrection(j, rho)
+                if self.jec:
+                    j.pt = j.rawP4.pt() * j._jecFactor
+                    j.mass = j.rawP4.mass() * j._jecFactor
+                if met is not None:
+                    j._jecFactorL1 = jetCorrector.getCorrection(j, rho, 'L1FastJet')
 
-        # JES uncertainty
-        if isMC and self.jes in ['up', 'down']:
-            for j in jets:
-                self.jesUncertainty.setJetPt(j.pt)
+            # set JER factor
+            j._smearFactorNominal = 1
+            j._smearFactor = 1
+            if isMC and (self.jer is not None or self.self.jesr_extra_br):
+                jerFactors = self.jetSmearer.getSmearValsPt(j, genjets, rho)
+                j._smearFactorNominal = _sf(jerFactors)
+                j._smearFactor = _sf(jerFactors, self.jer)
+                j.pt *= j._smearFactor
+                j.mass *= j._smearFactor
+                if self.jesr_extra_br:
+                    assert self.jer == 'nominal'
+                    j.jerSmearFactorUp = _sf(jerFactors, 'up') / j._smearFactorNominal
+                    j.jerSmearFactorDn = _sf(jerFactors, 'down') / j._smearFactorNominal
+
+            # set JES uncertainty ( = varied-Pt / Pt)
+            j._jesUncFactor = 1
+            if isMC and (self.jes in ['up', 'down'] or self.jesr_extra_br):
+                self.jesUncertainty.setJetPt(j.pt)  # corrected(+smeared) pt
                 self.jesUncertainty.setJetEta(j.eta)
                 delta = self.jesUncertainty.getUncertainty(True)
-                sf = 1 + delta if self.jes == 'up' else 1 - delta
-                j.pt *= sf
-                j.mass *= sf
+                if self.jesr_extra_br:
+                    j.jesUncFactorUp = 1 + delta
+                    j.jesUncFactorDn = 1 - delta
+                else:
+                    j._jesUncFactor = 1 + delta if self.jes == 'up' else 1 - delta
+                    j.pt *= j._jesUncFactor
+                    j.mass *= j._jesUncFactor
 
-        # jer smearing
-        if isMC and self.jer is not None:
-            for j in jets:
-                jersf = _sf(self.jetSmearer.getSmearValsPt(j, genjets, rho), self.jer)
-                j.pt *= jersf
-                j.mass *= jersf
+            # set uncertainty due to HEM15/16 issue
+            j._HEMUncFactor = 1
+            if isMC and self.applyHEMUnc:
+                if j.pt > 15 and j.phi > -1.57 and j.phi < -0.87:
+                    try:
+                        tightId = j.jetId & 2
+                    except RuntimeError:
+                        tightId = True
+                    if tightId:
+                        if j.eta > -2.5 and j.eta < -1.3:
+                            j._HEMUncFactor = 0.8
+                        elif j.eta > -3 and j.eta <= -2.5:
+                            j._HEMUncFactor = 0.65
+                        j.pt *= j._HEMUncFactor
+                        j.mass *= j._HEMUncFactor
 
-        # propogate to MET
+            # last thing: calc MET type-1 correction
+            j._t1MetDelta = None
+            if met is not None:
+                j._t1MetDelta = self.calcT1Corr(j) + self.calcT1CorrEEFix(j)
+
+        # correct MET
         if met is not None:
-            sumJetsP4New = sum([j.p4() for j in jets if j._forMET], ROOT.TLorentzVector())
-            newMET = met.p4() + (sumJetsP4Orig - sumJetsP4New)
-            met.pt, met.phi = newMET.Pt(), newMET.Phi()
-
-        # MET unclustered energy
-        if isMC and met is not None and self.met_unclustered:
-            delta = ROOT.TLorentzVector(met.MetUnclustEnUpDeltaX, met.MetUnclustEnUpDeltaY, 0, 0)
+            met_shift = sum([j._t1MetDelta for j in itertools.chain(jets, lowPtJets)])
+            # MET unclustered energy
+            if isMC and self.met_unclustered:
+                delta = np.array([met.MetUnclustEnUpDeltaX, met.MetUnclustEnUpDeltaY])
             if self.met_unclustered == 'up':
-                newMET = met.p4() + delta
+                met_shift += delta
             elif self.met_unclustered == 'down':
-                newMET = met.p4() - delta
-            met.pt, met.phi = newMET.Pt(), newMET.Phi()
+                met_shift -= delta
+            rawMetP4 = p4(rawMET, eta=None, mass=None)
+            newMET = rawMetP4 + ROOT.Math.XYZTVector(met_shift[0], met_shift[1], 0, 0)
+            if self.excludeJetsForMET is not None:
+                newMET += p4(met, eta=None, mass=None) - p4(defaultMET, eta=None, mass=None)
+            met.pt, met.phi = newMET.pt(), newMET.phi()
 
     def smearJetMass(self, jets, gensubjets=[], isMC=True, runNumber=None):
         # jmr smearing (mass resolution)
