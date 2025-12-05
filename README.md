@@ -65,8 +65,7 @@ python runHRTTrees.py -i /eos/uscms/store/user/lpcjme/noreplica/NanoHRT/path/to/
 ##### Make trees for heavy flavour tagging (bb/cc) data/MC comparison and scale factor measurement:
 
 ```bash
-python runHeavyFlavTrees.py -i /eos/uscms/store/user/lpcjme/noreplica/NanoHRT/path/to/input -o /path/to/output 
-(--sample-dir custom_samples) --jet-type [ak8,ak15] --channel [photon|qcd] --year [2016|2017|2018] -n 20 --batch
+python3 runHeavyFlavTrees.py --scouting -i /eos/cms/store/cmst3/group/vhcc/ScoutingNanoAOD/2024 -o /eos/user/z/zima/HadronicVH/20251204_ULNanoV9_MassRegression --jet-type ak15 --channel muon --year 2024 -n 20 --condor-extras '+AccountingGroup = "group_u_CMST3.all" ' --po jec False --po jes False --po jer False --sfbdt 0 --run-syst
 ```
 
 (Please see above for the command line options.)
