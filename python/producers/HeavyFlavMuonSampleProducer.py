@@ -45,15 +45,15 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         self.selectLeptons(event)
 
         #Jet & MET collections (no corrections in scouting)
-        self.correctJetAndMET(event)
+        #self.correctJetAndMET(event)
 
         #MET selection
         if event.met.pt < 50:
             return False
 
         #Leptonic W
-        event.mu._fake_mass = 0.1057
-        event.leptonicW = polarP4(event.mu, mass="_fake_mass") + event.met.p4()
+        event.mu._mass = 0.1057
+        event.leptonicW = polarP4(event.mu, mass="_mass") + event.met.p4()
         if event.leptonicW.Pt() < 100:
             return False
 

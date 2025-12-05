@@ -393,7 +393,7 @@ class HeavyFlavBaseProducerScouting(Module, object):
             self.out.fillBranch("met", 0.0)
             self.out.fillBranch("met_phi", 0.0)
 
-
+    '''
     def _selectEvent(self, event, fatjets):
             # logger.debug('processing event %d' % event.event)
             #event.Vboson = None
@@ -441,17 +441,16 @@ class HeavyFlavBaseProducerScouting(Module, object):
         
             self._evalMassRegression([event.ak8_2])
             
-            '''
-            if self._opts['mass_range'] is not None:
+          
+            #if self._opts['mass_range'] is not None:
                 # if any mass is in the window, keep the event
-                inMassWindow = False
-                for mass in event.ak8_2.masses.values():
-                    if (self._opts['mass_range'][0] <= mass <= self._opts['mass_range'][1]):
-                            inMassWindow = True
-                            break
-                if not inMassWindow:
-                        return False
-            '''
+            #    inMassWindow = False
+            #    for mass in event.ak8_2.masses.values():
+            #        if (self._opts['mass_range'][0] <= mass <= self._opts['mass_range'][1]):
+            #                inMassWindow = True
+            #                break
+            #    if not inMassWindow:
+         
             # channel specific selections
             #if self._channel == 'had':
             ht = sum([j.pt for j in getattr(event, "_allJets", [])])
@@ -461,139 +460,143 @@ class HeavyFlavBaseProducerScouting(Module, object):
                 
             # return True if passes selection
             return True
+    '''
 
     def loadGenHistory(self, event, fatjets):
-        """Minimal CMS-consistent gen matching for W/top branches"""
-
         if not self.isMC:
             return
 
-        # Require at least 2 fatjets
-        if fatjets is None or len(fatjets) < 2:
-            return
+        # use cleaned fatjets if available
+        if fatjets is None or len(fatjets) < 1:
+            return False
 
-        fj = fatjets[0]       # fj_1_
-        fj2 = fatjets[1]      # fj_2_
-        prefix = "fj_1_"
+        ak8  = fatjets[0]
+        ak8_2 = fatjets[1] if len(fatjets) > 1 else None
 
-        # ---------------------------
-        # Build genparticles w/ dauIdx
-        # ---------------------------
+        # build genparts with dauIdx
         try:
             genparts = event.genparts
         except RuntimeError:
             genparts = Collection(event, "GenPart")
-            for i, gp in enumerate(genparts):
-                if not hasattr(gp, "dauIdx"):
+            for idx, gp in enumerate(genparts):
+                if "dauIdx" not in gp.__dict__:
                     gp.dauIdx = []
                 if gp.genPartIdxMother >= 0:
                     mom = genparts[gp.genPartIdxMother]
-                    if not hasattr(mom, "dauIdx"):
-                        mom.dauIdx = []
-                    mom.dauIdx.append(i)
+                    if "dauIdx" not in mom.__dict__:
+                        mom.dauIdx = [idx]
+                    else:
+                        mom.dauIdx.append(idx)
             event.genparts = genparts
 
-        # ---------------------------
-        # Helpers
-        # ---------------------------
         def isHadronic(gp):
-            return any(abs(genparts[i].pdgId) < 6 for i in gp.dauIdx)
+            return any(abs(genparts[i].pdgId) < 6 for i in getattr(gp, "dauIdx", []))
 
         def getFinal(gp):
-            # Follow terminal copies of same-pdgId
-            for i in gp.dauIdx:
+            for i in getattr(gp, "dauIdx", []):
                 dau = genparts[i]
                 if dau.pdgId == gp.pdgId:
                     return getFinal(dau)
             return gp
 
-        def get_daughters(gp):
-            if not gp or not gp.dauIdx:
-                return []
-            # Return exactly 2 daus (W/Z/H)
-            return [genparts[gp.dauIdx[0]], genparts[gp.dauIdx[1]]]
-
-        # ---------------------------
-        # Collect gen W and Top
-        # ---------------------------
-        hadGenWs = []
-        hadGenTops = []
+        lepGenTops, hadGenTops, hadGenWs = [], [], []
 
         for gp in genparts:
+            # maybe relax this completely for scouting
             if hasattr(gp, "statusFlags") and gp.statusFlags & (1 << 13) == 0:
                 continue
 
-            # W bosons
-            if abs(gp.pdgId) == 24 and isHadronic(gp):
-                hadGenWs.append(gp)
-
-            # Top quark
             if abs(gp.pdgId) == 6:
-                gp.genB = None
-                gp.genW = None
                 for i in gp.dauIdx:
                     dau = genparts[i]
                     if abs(dau.pdgId) == 24:
-                        gp.genW = getFinal(dau)
+                        genW = getFinal(dau)
+                        gp.genW = genW
+                        if isHadronic(genW):
+                            hadGenTops.append(gp)
+                        else:
+                            lepGenTops.append(gp)
                     elif abs(dau.pdgId) in (1, 3, 5):
                         gp.genB = dau
+            elif abs(gp.pdgId) == 24 and isHadronic(gp):
+                hadGenWs.append(gp)
 
-                if gp.genW and gp.genB and isHadronic(gp.genW):
-                    hadGenTops.append(gp)
+        def get_daughters(parton):
+            if parton is None:
+                return []
+            if abs(parton.pdgId) == 6 and hasattr(parton, "genW") and hasattr(parton, "genB"):
+                W = parton.genW
+                if getattr(W, "dauIdx", []):
+                    return [parton.genB] + [genparts[i] for i in W.dauIdx[:2]]
+            elif abs(parton.pdgId) in (23, 24, 25) and getattr(parton, "dauIdx", []):
+                return [genparts[i] for i in parton.dauIdx[:2]]
+            return []
+        
+        prefix = "fj_1_"  # assuming ak8 is fj_1
 
-        # ---------------------------
-        # Closest hadronic W to fj
-        # ---------------------------
-        fj.genW, fj.dr_W = closest(fj, hadGenWs)
-
-        if fj.genW:
-            fj.genW.daus = get_daughters(fj.genW)   # (q1, q2)
-
-            # dr_W_daus (max ΔR between fj and W daughters)
-            dr_w_daus = max(deltaR(fj, dau) for dau in fj.genW.daus)
-            w_decay = max(abs(d.pdgId) for d in fj.genW.daus)
-
+        genW1, genWdr1 = closest(ak8, hadGenWs)
+        if ak8_2 is not None:
+            genW2, genWdr2 = closest(ak8_2, hadGenWs)
         else:
-            dr_w_daus = 99
-            w_decay = 0
+            genW2, genWdr2 = (None, 999)
 
-        self.out.fillBranch(prefix + "dr_W", fj.dr_W)
-        self.out.fillBranch(prefix + "dr_W_daus", dr_w_daus)
-        self.out.fillBranch(prefix + "W_decay", w_decay)
+        genW = genW1 if genWdr1<genWdr2 else genW2
 
-        # ---------------------------
-        # Closest hadronic Top to fj
-        # ---------------------------
-        fj.genT, fj.dr_T = closest(fj, hadGenTops)
+        # info of the closest hadGenW
+        wdecay_ = max([abs(d.pdgId) for d in get_daughters(genW)], default=0) if genW else 0
+        #self.out.fillBranch(prefix + "dr_W", fj.dr_W)
+        self.out.fillBranch(prefix + "dr_W_daus",
+                            max([deltaR(ak8, dau) for dau in get_daughters(genW)]) if genW else 99)
+        self.out.fillBranch(prefix + "W_decay", wdecay_)
 
-        if fj.genT:
-            # daughters: b, q1, q2
-            Wdaus = get_daughters(fj.genT.genW)
-            b = fj.genT.genB
+        # sort tops by deltaR to ak8
+        hadGenTops.sort(key=lambda x: deltaR2(x, ak8))
+        t = hadGenTops[0]
+        self.out.fillBranch(prefix + "dr_T_b", deltaR(ak8, t.genB) if len(hadGenTops) else 99)
+        dW = get_daughters(t.genW) if len(hadGenTops) else []
+        print(dW)
+        drwq1, drwq2 = [deltaR(ak8, dau) for dau in get_daughters(
+                hadGenTops[0].genW)] if len(hadGenTops) else [99, 99]
+        wq1_pdgId, wq2_pdgId = [dau.pdgId for dau in get_daughters(hadGenTops[0].genW)] if len(hadGenTops) else [0, 0]
+        if drwq1 < drwq2:
+                drwq1, drwq2 = drwq2, drwq1
+                wq1_pdgId, wq2_pdgId = wq2_pdgId, wq1_pdgId
+        self.out.fillBranch(prefix + "dr_T_Wq_max", drwq1)
+        self.out.fillBranch(prefix + "dr_T_Wq_min", drwq2)
+        self.out.fillBranch(prefix + "T_Wq_max_pdgId", wq1_pdgId)
+        self.out.fillBranch(prefix + "T_Wq_min_pdgId", wq2_pdgId)
+        
+        '''
+        lepGenTops.sort(key=lambda x: deltaR2(x, event.ak8))  # sort by deltaR
+        self.out.fillBranch("dr_ak8_leptop1_b", deltaR(event.ak8, lepGenTops[0].genB) if len(lepGenTops) > 0 else 99)
+        wlep = [dau for dau in get_daughters(lepGenTops[0].genW) if abs(
+                dau.pdgId) in (11, 13, 15)][0] if len(lepGenTops) > 0 else None
+        self.out.fillBranch("dr_ak8_leptop1_wlep", deltaR(event.ak8, wlep) if wlep else 99)
+        self.out.fillBranch("leptop1_wlep_pdgId", wlep.pdgId if wlep else 0)
 
-            # ΔR between fj and W daughters
-            drw = [deltaR(fj, d) for d in Wdaus]
-            pdgs = [d.pdgId for d in Wdaus]
-
-            # Sort: max first, min second
-            if drw[0] < drw[1]:
-                drw = drw[::-1]
-                pdgs = pdgs[::-1]
-
-            dr_T_b = deltaR(fj, b)
-
+        self.out.fillBranch("dr_ak8_leptop2_b", deltaR(event.ak8, lepGenTops[1].genB) if len(lepGenTops) > 1 else 99)
+        wlep = [dau for dau in get_daughters(lepGenTops[1].genW) if abs(
+                dau.pdgId) in (11, 13, 15)][0] if len(lepGenTops) > 1 else None
+        self.out.fillBranch("dr_ak8_leptop2_wlep", deltaR(event.ak8, wlep) if wlep else 99)
+        self.out.fillBranch("leptop2_wlep_pdgId", wlep.pdgId if wlep else 0)
+        '''
+        '''
+        if len(dW) >= 2:
+                q1, q2 = dW[0], dW[1]
+                drwq1, drwq2 = deltaR(ak8, q1), deltaR(ak8, q2)
+                if drwq1 < drwq2:
+                    drwq1, drwq2 = drwq2, drwq1
+                    q1, q2 = q2, q1
+                self.out.fillBranch(prefix + "dr_T_Wq_max", drwq1)
+                self.out.fillBranch(prefix + "dr_T_Wq_min", drwq2)
+                self.out.fillBranch(prefix + "T_Wq_max_pdgId", q1.pdgId)
+                self.out.fillBranch(prefix + "T_Wq_min_pdgId", q2.pdgId)
         else:
-            dr_T_b = 99
-            drw = [99, 99]
-            pdgs = [0, 0]
-
-        self.out.fillBranch(prefix + "dr_T", fj.dr_T)
-        self.out.fillBranch(prefix + "dr_T_b", dr_T_b)
-        self.out.fillBranch(prefix + "dr_T_Wq_max", drw[0])
-        self.out.fillBranch(prefix + "dr_T_Wq_min", drw[1])
-        self.out.fillBranch(prefix + "T_Wq_max_pdgId", pdgs[0])
-        self.out.fillBranch(prefix + "T_Wq_min_pdgId", pdgs[1])
-
+                self.out.fillBranch(prefix + "dr_T_Wq_max", 99)
+                self.out.fillBranch(prefix + "dr_T_Wq_min", 99)
+                self.out.fillBranch(prefix + "T_Wq_max_pdgId", 0)
+                self.out.fillBranch(prefix + "T_Wq_min_pdgId", 0)
+        '''
 
     def fillFatJetInfo(self, event, fatjets):
         for idx in ([1, 2] if self._channel in ['qcd', 'mutagged'] else [1]):
