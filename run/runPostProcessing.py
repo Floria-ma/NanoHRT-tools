@@ -462,7 +462,7 @@ def submit(args, configs):
     condordesc = '''\
 universe              = vanilla
 requirements          = (Arch == "X86_64") && (OpSys == "LINUX")
-MY.WantOS = "el7"
+MY.WantOS = "el9"
 request_memory        = {request_memory}
 request_disk          = 10000000
 executable            = {scriptfile}

@@ -52,7 +52,7 @@ ls -l
 
 export MLAS_DYNAMIC_CPU_ARCH=99
 export TMPDIR=`pwd`
-python processor.py $jobid
+python3 processor.py $jobid
 status=$?
 
 ls -l
