@@ -10,12 +10,22 @@ import logging
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
 
 hrt_cfgname = 'heavyFlavSFTree_cfg.json'
-default_config = {'sfbdt_threshold': -99,
-                  'run_tagger': False, 'tagger_versions': ['V02b', 'V02c', 'V02d'],
-                  'run_mass_regression': False, 'mass_regression_versions': ['V01a', 'V01b', 'V01c'],
-                  'jec': False, 'jes': None, 'jes_source': '', 'jes_uncertainty_file_prefix': '',
-                  'jer': 'nominal', 'jmr': None, 'met_unclustered': None, 'smearMET': False, 'applyHEMUnc': False,
-                  'jesr_extra_br': False}
+default_config = {
+    'channel': None,
+    'tagger_threshold_twoprong': None,
+    'tagger_threshold_bb': None,
+    'tagger_threshold_cc': None,
+    'use_nn_'
+    'mass_range': None,
+    'jec': False, 'jes': None, 'jes_source': '', 'jes_uncertainty_file_prefix': 'RegroupedV2_',
+    'jer': 'nominal', 'jmr': None, 'met_unclustered': None, 'applyHEMUnc': False,
+    'smearMET': False,
+    'runModules': True,
+    'fillSystWeights': False,
+    'nn_model_path': None,  # Neural network model file path
+    'nn_scaler_path': None,  # StandardScaler file path
+    'use_nn_classifier': False,  # Whether to use a neural network classifier
+}
 
 cut_dict_ak8 = {
     'photon': 'Sum$(Photon_pt>200 && Photon_cutBased>=2 && Photon_electronVeto)>0 && nFatJet>0',
@@ -37,6 +47,14 @@ cut_dict_ak15 = {
     'inclusive': 'Sum$((Jet_pt>25 && abs(Jet_eta)<2.4 && (Jet_jetId & 2)) * Jet_pt)>300 && Sum$(AK15Puppi_subJetIdx1>=0 && AK15Puppi_subJetIdx2>=0 && AK15Puppi_msoftdrop>10)>0',
 }
 '''
+jes_uncertainty_sources = {
+    '2015': ['Absolute', 'Absolute_2016', 'BBEC1', 'BBEC1_2016', 'EC2', 'EC2_2016', 'FlavorQCD', 'HF', 'HF_2016', 'RelativeBal', 'RelativeSample_2016'],
+    '2016': ['Absolute', 'Absolute_2016', 'BBEC1', 'BBEC1_2016', 'EC2', 'EC2_2016', 'FlavorQCD', 'HF', 'HF_2016', 'RelativeBal', 'RelativeSample_2016'],
+    '2017': ['Absolute', 'Absolute_2017', 'BBEC1', 'BBEC1_2017', 'EC2', 'EC2_2017', 'FlavorQCD', 'HF', 'HF_2017', 'RelativeBal', 'RelativeSample_2017'],
+    '2018': ['Absolute', 'Absolute_2018', 'BBEC1', 'BBEC1_2018', 'EC2', 'EC2_2018', 'FlavorQCD', 'HF', 'HF_2018', 'RelativeBal', 'RelativeSample_2018'],
+    '2024': [],
+}
+
 golden_json = {
     2015: 'Cert_271036-284044_13TeV_Legacy2016_Collisions16_JSON.txt',
     2016: 'Cert_271036-284044_13TeV_Legacy2016_Collisions16_JSON.txt',
@@ -111,8 +129,28 @@ def _process(args):
     else:
         args.cut = cut_dict_ak8[channel]
 
-    args.imports = [('PhysicsTools.NanoHRTTools.producers.HeavyFlavSFTreeProducer', 'heavyFlavSFTreeFromConfig')]
+    #args.imports = [('PhysicsTools.NanoHRTTools.producers.HeavyFlavSFTreeProducer', 'heavyFlavSFTreeFromConfig')]
+    args.imports = [('PhysicsTools.NanoHRTTools.producers.HeavyFlavSFTreeProducer',
+                 'heavyFlavSFTreeFromConfig')]
     
+    if args.scouting:
+        # Use your scouting muon producer instead of HeavyFlavSFTreeProducer
+        args.imports = [
+            ('PhysicsTools.NanoHRTTools.producers.HeavyFlavMuonSampleProducer',
+             'MuonTree_%d' % year)  # or whatever function/class you actually defined
+        ]
+        # Disable PN tagger / mass regression for scouting
+        default_config['run_tagger'] = False
+        default_config['run_mass_regression'] = False
+        args.run_tagger = False
+        args.run_mass_regression = False
+
+    # --- Cuts ---
+    if args.jet_type == 'ak15':
+        args.cut = _base_cut(year, channel, apply_tagger=False)
+    else:
+        args.cut = cut_dict_ak8[channel]
+
     if year == 2015:
         PUyear = 2016
     elif year == 2021:
@@ -127,7 +165,7 @@ def _process(args):
         args.imports.extend([('PhysicsTools.NanoAODTools.postprocessing.modules.common.puWeightProducer',
                               'puWeight_UL%d' % PUyear),
                              ('PhysicsTools.NanoHRTTools.producers.topPtWeightProducer', 'topPtWeight')])
-
+    
     # data, or just nominal MC
     if args.run_data or not args.run_syst:
         cfg = copy.deepcopy(default_config)
@@ -189,6 +227,10 @@ def _process(args):
 
 def main():
     parser = get_arg_parser()
+
+    parser.add_argument('--scouting',
+                    action='store_true', default=False,
+                    help='Use scouting producers instead of HeavyFlav UL Nano producers')
 
     parser.add_argument('--jet-type',
                         choices=['ak8', 'ak15'],
