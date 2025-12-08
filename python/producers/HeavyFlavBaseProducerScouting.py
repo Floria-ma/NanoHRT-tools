@@ -16,8 +16,11 @@ from ..helpers.utils import deltaR, closest, polarP4, configLogger, deltaR2, del
 logger = logging.getLogger("nano")
 configLogger("nano", loglevel=logging.INFO)
 
-lumi_dict = {2015: 19.52, 2016: 16.81, 2017: 41.48, 2018: 59.83, 
-             2021: 7.98, 2022: 26.67, 2023:17.794, 2024:9.451}
+
+# define luminosity per year.
+# note: for now, this is only meant for 2024 scouting samples.
+lumi_dict = {2024: 109.08}
+
 
 class _NullObject:
     '''An null object which does not store anything, and does not raise exception.'''
@@ -34,6 +37,7 @@ class _NullObject:
     def __setattr__(self, name, value):
         pass
 
+
 class METObject(Object):
 
     def p4(self):
@@ -45,11 +49,21 @@ class HeavyFlavBaseProducerScouting(Module, object):
     def __init__(self, channel, **kwargs):
         super(HeavyFlavBaseProducerScouting, self).__init__()
 
-        self._channel = channel    # 'qcd', 'photon', 'inclusive', 'muon'
+        # basic settings
+        self._channel = channel
+        # note: for now, this is only meant for channel = "muon"
         self.year = int(kwargs["year"])
+        # note: for now, this is only meant for 2024 samples
         self.jetType = kwargs.get("jetType", "scouting").lower()
-        self._jmeSysts = {'jec': False, 'jes': None, 'jes_source': '', 'jes_uncertainty_file_prefix': '',
-                          'jer': None, 'jmr': None, 'met_unclustered': None, 'smearMET': True, 'applyHEMUnc': False,
+        self._jmeSysts = {'jec': False,
+                          'jes': None,
+                          'jes_source': '',
+                          'jes_uncertainty_file_prefix': '',
+                          'jer': None,
+                          'jmr': None,
+                          'met_unclustered': None,
+                          'smearMET': True,
+                          'applyHEMUnc': False,
                           'jesr_extra_br': True}
         
         self._opts = {
@@ -57,6 +71,7 @@ class HeavyFlavBaseProducerScouting(Module, object):
             'mass_range': (40, 250),
         }
 
+        # update hard-coded options with provided options
         for k in kwargs:
             if k in self._jmeSysts:
                 self._jmeSysts[k] = kwargs[k]
@@ -70,7 +85,6 @@ class HeavyFlavBaseProducerScouting(Module, object):
         #logger.info('Running %s channel for year %s with JME systematics %s, other options %s',
         #            self._channel, str(self._year), str(self._jmeSysts), str(self._opts))
 
-
         self._doJetCleaning = True
 
         # pfjet collection
@@ -78,28 +92,12 @@ class HeavyFlavBaseProducerScouting(Module, object):
 
         # fatjet collection
         self._fatjet_name = "ScoutingFatPFJetRecluster"
-        self._jetConeSize = 0.8  # ak8
+        self._jetConeSize = 0.8 # we use ak8 for now
 
         logger.info(
             "HeavyFlavBaseProducerScouting: channel=%s, year=%s, ak4=%s, fatjets=%s",
             self._channel, self.year, self._ak4_name, self._fatjet_name
         )
-
-        # DeepJet WPs 
-        self.DeepJet_WP_L = {2015: 0.0508, 2016: 0.0480, 2017: 0.0532, 2018: 0.0490, 2021:0.0583, 2022: 0.0614, 2023: 0.0479, 2024: 0.048}[self.year]
-        self.DeepJet_WP_M = {2015: 0.2598, 2016: 0.2489, 2017: 0.3040, 2018: 0.2783, 2021:0.3086, 2022: 0.3196, 2023: 0.2431, 2024: 0.2435}[self.year]
-        self.DeepJet_WP_T = {2015: 0.6502, 2016: 0.6377, 2017: 0.7476, 2018: 0.7100, 2021:0.7183, 2022: 0.7300, 2023: 0.6553, 2024: 0.6563}[self.year]
-
-        self.PNet_WP_M = {
-            2015: 0,
-            2016: 0,
-            2017: 0,
-            2018: 0,
-            2021: 0.245,
-            2022: 0.2605,
-            2023: 0.1917,
-            2024: 0.1919
-        }[self.year]
 
     def beginJob(self):
         # nothing heavy to initialize for scouting
@@ -208,38 +206,41 @@ class HeavyFlavBaseProducerScouting(Module, object):
                 #self.out.branch(prefix + "W_pt", "F")
                 self.out.branch(prefix + "W_decay", "I")
 
-
-            if self.year <= 2017:
-                self.out.branch("l1PreFiringWeight", "F")
-                self.out.branch("l1PreFiringWeightUp", "F")
-                self.out.branch("l1PreFiringWeightDown", "F")
-            else:
-                self.out.branch("l1PreFiringWeight", "F")
-                self.out.branch("l1PreFiringWeightUp", "F")
-                self.out.branch("l1PreFiringWeightDown", "F")
+            # prefiring weight branches
+            # (not really defined for 2024 and/or scouting,
+            # kept only for consistency with other years)
+            self.out.branch("l1PreFiringWeight", "F")
+            self.out.branch("l1PreFiringWeightUp", "F")
+            self.out.branch("l1PreFiringWeightDown", "F")
 
     def endFile(self, inputFile, outputFile, inputTree, wrappedOutputTree):
         # nothing to clean up
         pass
 
     def selectLeptons(self, event):
-        # do lepton selection
-        event.looseLeptons = []  # used for jet lepton cleaning & lepton counting
+        # do loose lepton selection
+        # (typically used for jet lepton cleaning & lepton counting)
+        
+        event.looseLeptons = []
 
+        # electrons
         electrons = Collection(event, "ScoutingElectron")
         for el in electrons:
             el.etaSC = el.eta #+ el.deltaEtaSC
             if el.pt > 20 and abs(el.eta) < 2.5:# and el.mvaIso_WP90:
                 event.looseLeptons.append(el)
 
+        # muons
         muons = Collection(event, "ScoutingMuonVtx")
         for mu in muons:
             if mu.pt > 20 and abs(mu.eta) < 2.4:
                 event.looseLeptons.append(mu)
 
+        # sort by pt
         event.looseLeptons.sort(key=lambda x: x.pt, reverse=True)
     
     def correctJetAndMET(self, event):
+        # initialize jets and MET
        
         event.idx = event._entry if event._tree._entrylist is None else event._tree._entrylist.GetEntry(event._entry)
 
@@ -268,23 +269,23 @@ class HeavyFlavBaseProducerScouting(Module, object):
                 def p4(self):
                     return polarP4(self, eta=None, mass=None)
 
+            logger.error("ScoutingMET not found in event, using dummy MET instead.")
             event.met = _DummyMET()
 
         # sort jets by pt
         try:
             event._allJets = sorted(event._allJets, key=lambda x: x.pt, reverse=True)
-        except Exception:
-            pass
+        except Exception: pass
 
+        # sort fat jets by pt
         try:
             for idx, fj in enumerate(event._allFatJets):
                 fj.idx = idx
                 fj.is_qualified = True
             event._allFatJets = sorted(event._allFatJets, key=lambda x: x.pt, reverse=True)
-        except Exception:
-            pass
+        except Exception: pass
         
-        # select _allJets jets
+        # select jets
         if self._doJetCleaning:
             event.ak4jets = [
                 j for j in event._allJets
@@ -298,7 +299,7 @@ class HeavyFlavBaseProducerScouting(Module, object):
                 if j.pt > 25 and abs(j.eta) < 2.4
             ]
 
-        # select fatjets (lepton-cleaned)
+        # select fatjets
         if self._doJetCleaning:
             event.fatjets = [
                 fj for fj in event._allFatJets
@@ -328,8 +329,11 @@ class HeavyFlavBaseProducerScouting(Module, object):
         """
         Fill basic event-level info: year, lumi weight, MET filters, nlep, ht, MET.
         """
+
         # jet radius (use reclustered fatjet R)
         self.out.fillBranch("jetR", self._jetConeSize)
+
+        # year and lumi weight
         self.out.fillBranch("year", self.year)
         self.out.fillBranch("lumiwgt", lumi_dict.get(self.year, 1.0))
 
@@ -364,24 +368,10 @@ class HeavyFlavBaseProducerScouting(Module, object):
         # trigger
         #self.out.fillBranch("passTrigPFHTScouting", passTrigger(event,["DST_PFScouting_JetHT"]))
 
-        # L1 prefire weights: not really defined for scouting; default to 1 if missing
-        if self.year <= 2017:
-            self.out.fillBranch(
-                "l1PreFiringWeight",
-                getattr(event, "L1PreFiringWeight_Nom", 1.0),
-            )
-            self.out.fillBranch(
-                "l1PreFiringWeightUp",
-                getattr(event, "L1PreFiringWeight_Up", 1.0),
-            )
-            self.out.fillBranch(
-                "l1PreFiringWeightDown",
-                getattr(event, "L1PreFiringWeight_Dn", 1.0),
-            )
-        else:
-            self.out.fillBranch("l1PreFiringWeight", 1.0)
-            self.out.fillBranch("l1PreFiringWeightUp", 1.0)
-            self.out.fillBranch("l1PreFiringWeightDown", 1.0)
+        # fill prefire weight branches with dummy values
+        self.out.fillBranch("l1PreFiringWeight", 1.0)
+        self.out.fillBranch("l1PreFiringWeightUp", 1.0)
+        self.out.fillBranch("l1PreFiringWeightDown", 1.0)
 
         self.out.fillBranch("nlep", len(event.looseLeptons))
         self.out.fillBranch("ht", event.ht)
@@ -554,7 +544,6 @@ class HeavyFlavBaseProducerScouting(Module, object):
         t = hadGenTops[0]
         self.out.fillBranch(prefix + "dr_T_b", deltaR(ak8, t.genB) if len(hadGenTops) else 99)
         dW = get_daughters(t.genW) if len(hadGenTops) else []
-        print(dW)
         drwq1, drwq2 = [deltaR(ak8, dau) for dau in get_daughters(
                 hadGenTops[0].genW)] if len(hadGenTops) else [99, 99]
         wq1_pdgId, wq2_pdgId = [dau.pdgId for dau in get_daughters(hadGenTops[0].genW)] if len(hadGenTops) else [0, 0]
