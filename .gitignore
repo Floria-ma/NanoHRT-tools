@@ -1,6 +1,10 @@
+# ignore compiled/cached python code
+**__pycache__*
+**.pyc
+
+# others
 .autotools
 .cproject
 .project
 .pydevproject
 .settings/
-
