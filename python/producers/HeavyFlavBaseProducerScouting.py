@@ -541,7 +541,7 @@ class HeavyFlavBaseProducerScouting(Module, object):
 
         # sort tops by deltaR to ak8
         hadGenTops.sort(key=lambda x: deltaR2(x, ak8))
-        t = hadGenTops[0]
+        t = hadGenTops[0] if len(hadGenTops) else None
         self.out.fillBranch(prefix + "dr_T_b", deltaR(ak8, t.genB) if len(hadGenTops) else 99)
         dW = get_daughters(t.genW) if len(hadGenTops) else []
         drwq1, drwq2 = [deltaR(ak8, dau) for dau in get_daughters(
