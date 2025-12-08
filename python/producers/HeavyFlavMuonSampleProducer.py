@@ -45,7 +45,7 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         self.selectLeptons(event)
 
         #Jet & MET collections (no corrections in scouting)
-        #self.correctJetAndMET(event)
+        self.correctJetAndMET(event)
 
         #MET selection
         if event.met.pt < 50:
