@@ -27,17 +27,19 @@ default_config = {
     'use_nn_classifier': False,  # Whether to use a neural network classifier
 }
 
+#for muon, muon_pt & ScoutingMuonVtx_pt both exist, for now using ScoutingMuonVtx_pt for ScoutingNano
 cut_dict_ak8 = {
     'photon': 'Sum$(Photon_pt>200 && Photon_cutBased>=2 && Photon_electronVeto)>0 && nFatJet>0',
     'qcd': 'Sum$((Jet_pt>25 && abs(Jet_eta)<2.4 && (Jet_jetId & 2)) * Jet_pt)>200 && nFatJet>0',
-    'muon': 'Sum$(Muon_pt>55 && abs(Muon_eta)<2.4 && Muon_tightId && Muon_miniPFRelIso_all<0.10)>0 && nFatJet>0',
+    #'muon': 'Sum$(Muon_pt>55 && abs(Muon_eta)<2.4 && Muon_tightId && Muon_miniPFRelIso_all<0.10)>0 && nFatJet>0',
+    'muon': 'Sum$(ScoutingMuonVtx_pt>55 && abs(ScoutingMuonVtx_eta)<2.4 && nFatJet>0',
     'diboson': '(Sum$(Electron_pt>20 && abs(Electron_eta)<2.5 && abs(Electron_dxy)<0.05 && abs(Electron_dz)<0.2 && Electron_mvaFall17V2noIso_WP90 && Electron_miniPFRelIso_all<0.4) >= 2 ||'
                ' Sum$(Muon_pt>20 && abs(Muon_eta)<2.4 && abs(Muon_dxy)<0.05 && abs(Muon_dz)<0.2 && Muon_looseId && Muon_miniPFRelIso_all<0.4) >= 2) && nFatJet>0',
     'inclusive': 'Sum$((Jet_pt>25 && abs(Jet_eta)<2.4 && (Jet_jetId & 2)) * Jet_pt)>300 && Sum$(FatJet_subJetIdx1>=0 && FatJet_subJetIdx2>=0 && FatJet_msoftdrop>10)>0',
     'higgs': 'nFatJet>0',
     'mutagged': 'Sum$((Jet_pt>25 && abs(Jet_eta)<2.4 && (Jet_jetId & 2)) * Jet_pt)>200 && nFatJet>0',
 }
-'''
+
 cut_dict_ak15 = {
     'photon': 'Sum$(Photon_pt>200 && Photon_cutBased>=2 && Photon_electronVeto)>0 && nAK15Puppi>0',
     'qcd': 'Sum$((Jet_pt>25 && abs(Jet_eta)<2.4 && (Jet_jetId & 2)) * Jet_pt)>200 && nAK15Puppi>0',
@@ -45,14 +47,6 @@ cut_dict_ak15 = {
     'diboson': '(Sum$(Electron_pt>20 && abs(Electron_eta)<2.5 && abs(Electron_dxy)<0.05 && abs(Electron_dz)<0.2 && Electron_mvaFall17V2noIso_WP90 && Electron_miniPFRelIso_all<0.4) >= 2 ||'
                ' Sum$(Muon_pt>20 && abs(Muon_eta)<2.4 && abs(Muon_dxy)<0.05 && abs(Muon_dz)<0.2 && Muon_looseId && Muon_miniPFRelIso_all<0.4) >= 2) && nAK15Puppi>0',
     'inclusive': 'Sum$((Jet_pt>25 && abs(Jet_eta)<2.4 && (Jet_jetId & 2)) * Jet_pt)>300 && Sum$(AK15Puppi_subJetIdx1>=0 && AK15Puppi_subJetIdx2>=0 && AK15Puppi_msoftdrop>10)>0',
-}
-'''
-jes_uncertainty_sources = {
-    '2015': ['Absolute', 'Absolute_2016', 'BBEC1', 'BBEC1_2016', 'EC2', 'EC2_2016', 'FlavorQCD', 'HF', 'HF_2016', 'RelativeBal', 'RelativeSample_2016'],
-    '2016': ['Absolute', 'Absolute_2016', 'BBEC1', 'BBEC1_2016', 'EC2', 'EC2_2016', 'FlavorQCD', 'HF', 'HF_2016', 'RelativeBal', 'RelativeSample_2016'],
-    '2017': ['Absolute', 'Absolute_2017', 'BBEC1', 'BBEC1_2017', 'EC2', 'EC2_2017', 'FlavorQCD', 'HF', 'HF_2017', 'RelativeBal', 'RelativeSample_2017'],
-    '2018': ['Absolute', 'Absolute_2018', 'BBEC1', 'BBEC1_2018', 'EC2', 'EC2_2018', 'FlavorQCD', 'HF', 'HF_2018', 'RelativeBal', 'RelativeSample_2018'],
-    '2024': [],
 }
 
 golden_json = {
@@ -65,27 +59,6 @@ golden_json = {
     2023: 'Cert_Collisions2023_366442_370790_Golden.json',
     2024: 'Cert_Collisions2024_378981_386951_Golden.json',
 }
-
-def _base_cut(year, channel, apply_tagger=False):
-    # FIXME: remember to update this whenever the selections change in vhTreeProducer.py
-    basesels = {
-        'muon': 'ScoutingMET_pt<150'
-    }
-    # ak15cuts = {
-    #     'subjets': '(AK15Puppi_subJetIdx1>=0 && AK15Puppi_subJetIdx2>=0)',
-    #     'score': '(AK15Puppi_ParticleNetMD_probXcc/(1-AK15Puppi_ParticleNetMD_probXbb-AK15Puppi_ParticleNetMD_probXqq)>0.5)'
-    # }
-    # if default_config['run_mass_regression']:
-    #     ak15sel = 'Sum$(%s)>0' % ak15cuts['score'] if apply_tagger else 'nAK15Puppi>0'
-    # else:
-    #     cutstr = ak15cuts['subjets']
-    #     if apply_tagger:
-    #         cutstr = '%s && %s' % (cutstr, ak15cuts['score'])
-    #     ak15sel = 'Sum$(%s)>0' % cutstr
-
-    ak15sel = 'nScoutingFatPFJetRecluster>1'
-    cut = basesels[channel].format(fatjetcut=ak15sel)
-    return cut
 
 def _process(args):
     default_config['jetType'] = args.jet_type
@@ -146,15 +119,19 @@ def _process(args):
 
     # set which base cuts to apply
     # TO UPDATE, not clear which ones to use; for now just use base_cut for everything
-    #if args.jet_type == 'ak15': args.cut = _base_cut(year, channel, apply_tagger=False)
-    #else: args.cut = cut_dict_ak8[channel]
-    args.cut = _base_cut(year, channel, apply_tagger=False)
+    #if args.jet_type == 'ak15': 
+    #    args.cut = cut_dict_ak15[channel]
+    #else: 
+    #    args.cut = cut_dict_ak8[channel]
+    #args.cut = _base_cut(year, channel, apply_tagger=False)
 
     # set  year to use for pileup reweighting
     if year == 2015:
         PUyear = 2016
     elif year == 2021:
         PUyear = 2022
+    #elif year == 2024:
+    #    PUyear = 2024
     else:
         PUyear = year
 

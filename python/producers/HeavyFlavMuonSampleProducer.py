@@ -32,9 +32,9 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
 
     def analyze(self, event):
 
-        # --- Muon selection ---
+        # muon selection
         event._allMuons = Collection(event, "ScoutingMuonVtx")
-        event.muons = [mu for mu in event._allMuons if mu.pt > 20 and abs(mu.eta) < 2.4]
+        event.muons = [mu for mu in event._allMuons if mu.pt > 55 and abs(mu.eta) < 2.4]
 
         if len(event.muons) != 1:
             return False
@@ -61,13 +61,11 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         bjets = [j for j in event.ak4jets if abs(deltaPhi(j, event.mu)) < 2]
         if len(bjets) == 0:
             return False
-
+        
         event.bjets = bjets
         fatjets = event.fatjets
-        if len(fatjets) < 2:
+        if len(fatjets) < 1:
             return False
-        #if not self._selectEvent(event, fatjets):
-        #    return False
 
         #Fatjet selection (must be far from muon)
         probe_jets = [fj for fj in event.fatjets if abs(deltaPhi(fj, event.mu)) > 2]
@@ -77,14 +75,16 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         #probe_fj = probe_jets[0]
         probe_jets = probe_jets[:1]
         self.loadGenHistory(event, probe_jets)
-        
+        #self.evalMassRegression(event, probe_jets)
 
+        # fill output branches
         self.fillBaseEventInfo(event)
-        self.out.fillBranch("passMuTrig", passTrigger(event, ["DST_PFScouting_SingleMuon"]))
         self.fillFatJetInfo(event, probe_jets)
+        
+        # fill
+        self.out.fillBranch("passMuTrig", passTrigger(event, ["DST_PFScouting_SingleMuon"]))
         self.out.fillBranch("muon_pt", event.mu.pt)
         self.out.fillBranch("muon_eta", event.mu.eta)
-        self.out.fillBranch("muon_phi", event.mu.phi)
         #self.out.fillBranch("muon_miniIso", event.mu.miniPFRelIso_all)
         self.out.fillBranch("leptonicW_pt", event.leptonicW.Pt())
 

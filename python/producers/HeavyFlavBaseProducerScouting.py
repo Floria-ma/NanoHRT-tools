@@ -7,10 +7,10 @@ ROOT.PyConfig.IgnoreCommandLineOptions = True
 
 from PhysicsTools.NanoAODTools.postprocessing.framework.datamodel import Collection, Object
 from PhysicsTools.NanoAODTools.postprocessing.framework.eventloop import Module
+
 from ..helpers.nnHelper import convert_prob, ensemble
 from ..helpers.jetmetCorrector import JetMETCorrector, rndSeed
 from ..helpers.triggerHelper import passTrigger
-
 from ..helpers.utils import deltaR, closest, polarP4, configLogger, deltaR2, deltaPhi
 
 logger = logging.getLogger("nano")
@@ -66,12 +66,15 @@ class HeavyFlavBaseProducerScouting(Module, object):
                           'applyHEMUnc': False,
                           'jesr_extra_br': True}
         
-        self._opts = {
-            "WRITE_CACHE_FILE": False,
-            'mass_range': (40, 250),
-        }
+        #self._opts = {
+        #    "WRITE_CACHE_FILE": False,
+        #    'mass_range': (40, 250),
+        #}
+        self._opts = {'sfbdt_threshold': -99,
+                      'run_tagger': False, 'tagger_versions': ['V02b', 'V02c', 'V02d'],
+                      'run_mass_regression': False, 'mass_regression_versions': ['V01a', 'V01b', 'V01c'],
+                      'WRITE_CACHE_FILE': False}
 
-        # update hard-coded options with provided options
         for k in kwargs:
             if k in self._jmeSysts:
                 self._jmeSysts[k] = kwargs[k]
@@ -79,17 +82,17 @@ class HeavyFlavBaseProducerScouting(Module, object):
                 self._opts[k] = kwargs[k]
 
         #self._needsJMECorr = False  
-        #self._needsJMECorr = any([self._jmeSysts['jec'], self._jmeSysts['jes'],
-        #                          self._jmeSysts['jer'], self._jmeSysts['jmr'],
-        #                          self._jmeSysts['met_unclustered'], self._jmeSysts['applyHEMUnc']])
+        self._needsJMECorr = any([self._jmeSysts['jec'], self._jmeSysts['jes'],
+                                  self._jmeSysts['jer'], self._jmeSysts['jmr'],
+                                  self._jmeSysts['met_unclustered'], self._jmeSysts['applyHEMUnc']])
         #logger.info('Running %s channel for year %s with JME systematics %s, other options %s',
         #            self._channel, str(self._year), str(self._jmeSysts), str(self._opts))
 
         self._doJetCleaning = True
 
+        #if self.jetType == 'ak8':
         # pfjet collection
         self._ak4_name = "ScoutingPFJet"
-
         # fatjet collection
         self._fatjet_name = "ScoutingFatPFJetRecluster"
         self._jetConeSize = 0.8 # we use ak8 for now
@@ -107,7 +110,7 @@ class HeavyFlavBaseProducerScouting(Module, object):
         # MC or data
         self.isMC = bool(inputTree.GetBranch("genWeight"))
 
-        # try to detect an available rho-like branch
+        # try to get an available rho branch
         if inputTree.GetBranch("ScoutingRho_fixedGridRhoFastjetAll"):
             self.rho_branch_name = "ScoutingRho_fixedGridRhoFastjetAll"
         else:
@@ -127,6 +130,14 @@ class HeavyFlavBaseProducerScouting(Module, object):
         self.out.branch("met_phi", "F")
         #self.out.branch("passTrigPFHTScouting", "O")
 
+        # prefiring weight branches
+        # (not really defined for 2024 and/or scouting,
+        # kept only for consistency with other years)
+        self.out.branch("l1PreFiringWeight", "F")
+        self.out.branch("l1PreFiringWeightUp", "F")
+        self.out.branch("l1PreFiringWeightDown", "F")
+        
+        # Large-R jets
         for idx in ([1, 2] if self._channel in ['qcd', 'mutagged'] else [1]):
             prefix = 'fj_%d_' % idx
 
@@ -138,13 +149,12 @@ class HeavyFlavBaseProducerScouting(Module, object):
             self.out.branch(prefix + "mass", "F")
             #self.out.branch(prefix + "rawmass", "F")
             #self.out.branch(prefix + "sdmass", "F")
-            #self.out.branch(prefix + "regressed_mass", "F")
+            #self.out.branch(prefix + "ParT_resonanceMass", "F")
             self.out.branch(prefix + "tau21", "F")
             self.out.branch(prefix + "tau32", "F")
             #self.out.branch(prefix + "btagcsvv2", "F")
             #self.out.branch(prefix + "btagjp", "F")
 
-            #scoutGlobalParT
             # ParticleNet (scouting)
             self.out.branch(prefix + "PN_Hbb", "F")
             self.out.branch(prefix + "PN_Hcc", "F")
@@ -166,7 +176,7 @@ class HeavyFlavBaseProducerScouting(Module, object):
             self.out.branch(prefix + "scoutGloParT_tauhtaum", "F")
             self.out.branch(prefix + "scoutGloParT_QCD", "F")
 
-            # VS-QCD scores (auto-computed)
+            # VSQCD scores
             self.out.branch(prefix + "PN_HbbVsQCD", "F")
             self.out.branch(prefix + "PN_HccVsQCD", "F")
             self.out.branch(prefix + "PN_HqqVsQCD", "F")
@@ -182,19 +192,16 @@ class HeavyFlavBaseProducerScouting(Module, object):
             self.out.branch(prefix + "scoutGloParT_ZVsQCD",  "F")
             self.out.branch(prefix + "scoutGloParT_WVsQCD",  "F")
 
-            #self.out.branch(prefix + "scoutGloParT_HbbVsQCD", "F")
-            #self.out.branch(prefix + "scoutGloParT_HccVsQCD", "F")
-
             # massCorr branches
             self.out.branch(prefix + "scoutGloParT_massCorrGeneric", "F")
             self.out.branch(prefix + "scoutGloParT_massCorrGenericW2p", "F")
             self.out.branch(prefix + "scoutGloParT_massCorrGenericX2p", "F")
             self.out.branch(prefix + "scoutGloParT_massCorrResonance", "F")
 
-            # matching variables
+            # gen-matching variables
             if self.isMC:
                 # info of the closest hadGenTop
-                #self.out.branch(prefix + "dr_T", "F")
+                self.out.branch(prefix + "dr_T", "F")
                 self.out.branch(prefix + "dr_T_b", "F")
                 self.out.branch(prefix + "dr_T_Wq_max", "F")
                 self.out.branch(prefix + "dr_T_Wq_min", "F")
@@ -205,13 +212,6 @@ class HeavyFlavBaseProducerScouting(Module, object):
                 self.out.branch(prefix + "dr_W", "F")
                 #self.out.branch(prefix + "W_pt", "F")
                 self.out.branch(prefix + "W_decay", "I")
-
-            # prefiring weight branches
-            # (not really defined for 2024 and/or scouting,
-            # kept only for consistency with other years)
-            self.out.branch("l1PreFiringWeight", "F")
-            self.out.branch("l1PreFiringWeightUp", "F")
-            self.out.branch("l1PreFiringWeightDown", "F")
 
     def endFile(self, inputFile, outputFile, inputTree, wrappedOutputTree):
         # nothing to clean up
@@ -227,13 +227,13 @@ class HeavyFlavBaseProducerScouting(Module, object):
         electrons = Collection(event, "ScoutingElectron")
         for el in electrons:
             el.etaSC = el.eta #+ el.deltaEtaSC
-            if el.pt > 20 and abs(el.eta) < 2.5:# and el.mvaIso_WP90:
+            if el.pt > 10 and abs(el.eta) < 2.5:# and el.mvaIso_WP90:
                 event.looseLeptons.append(el)
 
         # muons
         muons = Collection(event, "ScoutingMuonVtx")
         for mu in muons:
-            if mu.pt > 20 and abs(mu.eta) < 2.4:
+            if mu.pt > 10 and abs(mu.eta) < 2.4:
                 event.looseLeptons.append(mu)
 
         # sort by pt
@@ -242,7 +242,7 @@ class HeavyFlavBaseProducerScouting(Module, object):
     def correctJetAndMET(self, event):
         # initialize jets and MET
        
-        event.idx = event._entry if event._tree._entrylist is None else event._tree._entrylist.GetEntry(event._entry)
+        #event.idx = event._entry if event._tree._entrylist is None else event._tree._entrylist.GetEntry(event._entry)
 
         # scoutingPFJet
         try:
@@ -326,10 +326,6 @@ class HeavyFlavBaseProducerScouting(Module, object):
             }
 
     def fillBaseEventInfo(self, event):
-        """
-        Fill basic event-level info: year, lumi weight, MET filters, nlep, ht, MET.
-        """
-
         # jet radius (use reclustered fatjet R)
         self.out.fillBranch("jetR", self._jetConeSize)
 
@@ -358,12 +354,6 @@ class HeavyFlavBaseProducerScouting(Module, object):
         if self.year >= 2017:
             met_filters = met_filters and _safe_flag("Flag_ecalBadCalibFilter")
         
-        #self.out.fillBranch("met", event.met.pt)
-        #self.out.fillBranch("met_phi", event.met.phi)
-        #if self._channel == '0L' or self._channel == 'had':
-        #self.out.fillBranch("dphi_met_tkmet", event._dphi_met_tkmet)
-        #self.out.fillBranch("min_dphi_met_jet", event._min_dphi_met_jet)
-
         self.out.fillBranch("passmetfilters", met_filters)
         # trigger
         #self.out.fillBranch("passTrigPFHTScouting", passTrigger(event,["DST_PFScouting_JetHT"]))
@@ -383,85 +373,16 @@ class HeavyFlavBaseProducerScouting(Module, object):
             self.out.fillBranch("met", 0.0)
             self.out.fillBranch("met_phi", 0.0)
 
-    '''
-    def _selectEvent(self, event, fatjets):
-            # logger.debug('processing event %d' % event.event)
-            #event.Vboson = None
-            #event.higgs = None
-            #event.tag = None  
-            #event.ak8jets = fatjets
-
-            # sort by pt
-            #event.ak8jets = sorted(fatjets, key=lambda x: x.pt, reverse=True)
-            fatjets = sorted(fatjets, key=lambda x: x.pt, reverse=True)
-            #event.ak8jets = sorted(event.ak8jets, key=lambda x: x.pt, reverse=True)
-            if fatjets is None or len(fatjets) < 2:
-                return False
-
-            mass0 = fatjets[0].scoutGlobalParT_massCorrResonance * fatjets[0].mass
-            mass1 = fatjets[1].scoutGlobalParT_massCorrResonance * fatjets[1].mass
-
-            if (mass0 < mass1):
-                H_idx=1
-                V_idx=0
-            else:
-                H_idx=0
-                V_idx=1
-
-            # #these are the actual jet objects, mass ordered, but this assignment is not used in the final analysis
-            event.recoV = fatjets[V_idx]
-            event.recoH = fatjets[H_idx]
-            #event.H_idx = H_idx
-
-            #these have just the p4
-            event.Vboson = fatjets[V_idx].p4()
-            event.higgs = fatjets[H_idx].p4()
-
-            #these are the jet objects pt ordered
-            if len(fatjets)<2:
-                return False
-            event.ak8 = fatjets[0]
-            event.ak8_2 = fatjets[1]
-
-            if abs(deltaPhi(event.ak8.phi, event.ak8_2.phi)) < 2.2:
-                return False
-
-            #if abs(deltaPhi(event.ak8.p4().Phi(), event.ak8_2.p4().Phi())) < 2.2:
-            #    return False
-        
-            self._evalMassRegression([event.ak8_2])
-            
-          
-            #if self._opts['mass_range'] is not None:
-                # if any mass is in the window, keep the event
-            #    inMassWindow = False
-            #    for mass in event.ak8_2.masses.values():
-            #        if (self._opts['mass_range'][0] <= mass <= self._opts['mass_range'][1]):
-            #                inMassWindow = True
-            #                break
-            #    if not inMassWindow:
-         
-            # channel specific selections
-            #if self._channel == 'had':
-            ht = sum([j.pt for j in getattr(event, "_allJets", [])])
-            #ht = sum([j.pt for j in event._allJets])
-            if (event.met.pt > 150) :
-                    return False
-                
-            # return True if passes selection
-            return True
-    '''
-
     def loadGenHistory(self, event, fatjets):
         if not self.isMC:
             return
 
         # use cleaned fatjets if available
-        if fatjets is None or len(fatjets) < 1:
-            return False
+        #if fatjets is None or len(fatjets) < 1:
+        #    return False
 
         ak8  = fatjets[0]
-        ak8_2 = fatjets[1] if len(fatjets) > 1 else None
+        #ak8_2 = fatjets[1] if len(fatjets) > 1 else None
 
         # build genparts with dauIdx
         try:
@@ -523,70 +444,35 @@ class HeavyFlavBaseProducerScouting(Module, object):
             return []
         
         prefix = "fj_1_"  # assuming ak8 is fj_1
-
-        genW1, genWdr1 = closest(ak8, hadGenWs)
-        if ak8_2 is not None:
-            genW2, genWdr2 = closest(ak8_2, hadGenWs)
-        else:
-            genW2, genWdr2 = (None, 999)
-
-        genW = genW1 if genWdr1<genWdr2 else genW2
+        
+        genW, dr_W = closest(ak8, hadGenWs)
 
         # info of the closest hadGenW
         wdecay_ = max([abs(d.pdgId) for d in get_daughters(genW)], default=0) if genW else 0
-        #self.out.fillBranch(prefix + "dr_W", fj.dr_W)
+        self.out.fillBranch(prefix + "dr_W", dr_W)
         self.out.fillBranch(prefix + "dr_W_daus",
                             max([deltaR(ak8, dau) for dau in get_daughters(genW)]) if genW else 99)
         self.out.fillBranch(prefix + "W_decay", wdecay_)
 
         # sort tops by deltaR to ak8
-        hadGenTops.sort(key=lambda x: deltaR2(x, ak8))
-        t = hadGenTops[0] if len(hadGenTops) else None
-        self.out.fillBranch(prefix + "dr_T_b", deltaR(ak8, t.genB) if len(hadGenTops) else 99)
-        dW = get_daughters(t.genW) if len(hadGenTops) else []
+        genT, dr_T = closest(ak8, hadGenTops)
+        #hadGenTops.sort(key=lambda x: deltaR2(x, ak8))
+        #t = genT if len(genT) else None
+        self.out.fillBranch(prefix + "dr_T_b", deltaR(ak8, genT.genB) if len(hadGenTops) else 99)
+
         drwq1, drwq2 = [deltaR(ak8, dau) for dau in get_daughters(
-                hadGenTops[0].genW)] if len(hadGenTops) else [99, 99]
-        wq1_pdgId, wq2_pdgId = [dau.pdgId for dau in get_daughters(hadGenTops[0].genW)] if len(hadGenTops) else [0, 0]
+                genT.genW)] if len(hadGenTops) else [99, 99]
+        wq1_pdgId, wq2_pdgId = [dau.pdgId for dau in get_daughters(genT.genW)] if len(hadGenTops) else [0, 0]
         if drwq1 < drwq2:
                 drwq1, drwq2 = drwq2, drwq1
                 wq1_pdgId, wq2_pdgId = wq2_pdgId, wq1_pdgId
+        
+        self.out.fillBranch(prefix + "dr_T", dr_T)
         self.out.fillBranch(prefix + "dr_T_Wq_max", drwq1)
         self.out.fillBranch(prefix + "dr_T_Wq_min", drwq2)
         self.out.fillBranch(prefix + "T_Wq_max_pdgId", wq1_pdgId)
         self.out.fillBranch(prefix + "T_Wq_min_pdgId", wq2_pdgId)
         
-        '''
-        lepGenTops.sort(key=lambda x: deltaR2(x, event.ak8))  # sort by deltaR
-        self.out.fillBranch("dr_ak8_leptop1_b", deltaR(event.ak8, lepGenTops[0].genB) if len(lepGenTops) > 0 else 99)
-        wlep = [dau for dau in get_daughters(lepGenTops[0].genW) if abs(
-                dau.pdgId) in (11, 13, 15)][0] if len(lepGenTops) > 0 else None
-        self.out.fillBranch("dr_ak8_leptop1_wlep", deltaR(event.ak8, wlep) if wlep else 99)
-        self.out.fillBranch("leptop1_wlep_pdgId", wlep.pdgId if wlep else 0)
-
-        self.out.fillBranch("dr_ak8_leptop2_b", deltaR(event.ak8, lepGenTops[1].genB) if len(lepGenTops) > 1 else 99)
-        wlep = [dau for dau in get_daughters(lepGenTops[1].genW) if abs(
-                dau.pdgId) in (11, 13, 15)][0] if len(lepGenTops) > 1 else None
-        self.out.fillBranch("dr_ak8_leptop2_wlep", deltaR(event.ak8, wlep) if wlep else 99)
-        self.out.fillBranch("leptop2_wlep_pdgId", wlep.pdgId if wlep else 0)
-        '''
-        '''
-        if len(dW) >= 2:
-                q1, q2 = dW[0], dW[1]
-                drwq1, drwq2 = deltaR(ak8, q1), deltaR(ak8, q2)
-                if drwq1 < drwq2:
-                    drwq1, drwq2 = drwq2, drwq1
-                    q1, q2 = q2, q1
-                self.out.fillBranch(prefix + "dr_T_Wq_max", drwq1)
-                self.out.fillBranch(prefix + "dr_T_Wq_min", drwq2)
-                self.out.fillBranch(prefix + "T_Wq_max_pdgId", q1.pdgId)
-                self.out.fillBranch(prefix + "T_Wq_min_pdgId", q2.pdgId)
-        else:
-                self.out.fillBranch(prefix + "dr_T_Wq_max", 99)
-                self.out.fillBranch(prefix + "dr_T_Wq_min", 99)
-                self.out.fillBranch(prefix + "T_Wq_max_pdgId", 0)
-                self.out.fillBranch(prefix + "T_Wq_min_pdgId", 0)
-        '''
-
     def fillFatJetInfo(self, event, fatjets):
         for idx in ([1, 2] if self._channel in ['qcd', 'mutagged'] else [1]):
             prefix = 'fj_%d_' % idx
@@ -609,7 +495,7 @@ class HeavyFlavBaseProducerScouting(Module, object):
             self.out.fillBranch(prefix + "mass", getattr(fj, "mass", 0.0))
             #self.out.fillBranch(prefix + "rawmass", fj.mass)
             #self.out.fillBranch(prefix + "sdmass", fj.msoftdrop)
-            #self.out.fillBranch(prefix + "regressed_mass", fj.regressed_mass)
+            #self.out.fillBranch(prefix + "ParT_resonanceMass", fj.ParT_resonanceMass)
             tau1 = getattr(fj, "tau1", -1)
             tau2 = getattr(fj, "tau2", -1)
             tau3 = getattr(fj, "tau3", -1)
@@ -665,60 +551,4 @@ class HeavyFlavBaseProducerScouting(Module, object):
             self.out.fillBranch(prefix + "scoutGloParT_massCorrGenericX2p", getattr(fj, "scoutGlobalParT_massCorrGenericX2p", -1))
             self.out.fillBranch(prefix + "scoutGloParT_massCorrResonance", getattr(fj, "scoutGlobalParT_massCorrResonance", -1))
             
-            '''
-            if self.isMC:
-                fj = fatjets[idx - 1]
-                #genparts = Collection(event, "GenPart")
-
-                
-                # info of the closest hadGenW
-                self.out.fillBranch(prefix + "dr_W", fj.dr_W)
-                self.out.fillBranch(prefix + "dr_W_daus",
-                                    max([deltaR(fj, dau) for dau in fj.genW.daus]) if fj.genW else 99)
-                self.out.fillBranch(prefix + "W_pt", fj.genW.pt if fj.genW else -1)
-                self.out.fillBranch(prefix + "W_decay", max([abs(d.pdgId) for d in fj.genW.daus]) if fj.genW else 0)
-
-                # info of the closest hadGenTop
-                drwq1, drwq2 = [deltaR(fj, dau) for dau in fj.genT.genW.daus] if fj.genT else [99, 99]
-                wq1_pdgId, wq2_pdgId = [dau.pdgId for dau in fj.genT.genW.daus] if fj.genT else [0, 0]
-                if drwq1 < drwq2:
-                    drwq1, drwq2 = drwq2, drwq1
-                    wq1_pdgId, wq2_pdgId = wq2_pdgId, wq1_pdgId
-                
-                # find b closest to fj
-                drs_b = [(deltaR(fj, gp), gp) for gp in genparts if abs(gp.pdgId) == 5]
-                if drs_b:
-                    dr_b, genb = min(drs_b, key=lambda x: x[0])
-                    self.out.fillBranch(prefix + "dr_T_b", dr_b)
-                else:
-                    self.out.fillBranch(prefix + "dr_T_b", 99)
-
-                # find W daughters
-                Wd = [gp for gp in genparts if abs(gp.pdgId) in [1,2,3,4]]   # light quarks
-                drs_Wq = [(deltaR(fj, gp), gp) for gp in Wd]
-                if drs_Wq:
-                    dr_Wq_max, gpmax = min(drs_Wq, key=lambda x: x[0])
-                    self.out.fillBranch(prefix + "dr_T_Wq_max", dr_Wq_max)
-                    self.out.fillBranch(prefix + "T_Wq_max_pdgId", gpmax.pdgId)
-                else:
-                    self.out.fillBranch(prefix + "dr_T_Wq_max", 99)
-                    self.out.fillBranch(prefix + "T_Wq_max_pdgId", 0)
-
-                # ΔR(W daughters)
-                if len(Wd) >= 2:
-                    # choose the first two daughters arbitrarily (you can improve logic)
-                    dr_W_daus = deltaR(Wd[0], Wd[1])
-                    self.out.fillBranch(prefix + "dr_W_daus", dr_W_daus)
-                else:
-                    self.out.fillBranch(prefix + "dr_W_daus", 99)
-
-                self.out.fillBranch(prefix + "dr_T", fj.dr_T)
-                self.out.fillBranch(prefix + "dr_T_b", deltaR(fj, fj.genT.genB) if fj.genT else 99)
-                self.out.fillBranch(prefix + "dr_T_Wq_max", drwq1)
-                self.out.fillBranch(prefix + "dr_T_Wq_min", drwq2)
-                self.out.fillBranch(prefix + "T_Wq_max_pdgId", wq1_pdgId)
-                self.out.fillBranch(prefix + "T_Wq_min_pdgId", wq2_pdgId)
-                self.out.fillBranch(prefix + "T_pt", fj.genT.pt if fj.genT else -1)
-            '''
-        
-
+            
