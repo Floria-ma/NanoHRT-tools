@@ -264,54 +264,96 @@ def create_metadata(args):
 
     _, samp_to_datasets = load_dataset_file(args.datasets)
 
-    # discover all the datasets
+    # find input files for the case of local files
     if args.inputdir:
+        # get the names of all samples in the input directory
         found_samples = os.listdir(args.inputdir)
+        # loop over requested samples in sample list
         for samp in samp_to_datasets:
             filelist = []
             for dataset in samp_to_datasets[samp]:
+                # check if the sample is available
                 if sname(dataset) not in found_samples:
                     logging.warning('Cannot find dataset %s in the input dir %s' % (dataset, args.inputdir))
                     continue
-                if not select_sample(dataset):
-                    continue
+                # optionally skip this sample
+                if not select_sample(dataset): continue
+                # find all files for this sample
                 sampdir = os.path.join(args.inputdir, sname(dataset))
                 for dp, dn, filenames in os.walk(sampdir, followlinks=True):
                     #This is super weird but if I remove the loop below it sometimes doesn't work
                     for dir in dn:
                         subdir = os.path.join(dp, dir)
                         #logging.debug(f"Contents of {dir}: {os.listdir(subdir)}")
-                    if 'failed' in dp:
-                        continue
+                    if 'failed' in dp: continue
                     for f in filenames:
-                        if not f.endswith('.root'):
-                            continue
+                        if not f.endswith('.root'): continue
                         if os.path.getsize(os.path.join(dp, f)) < 1000:
-                            #Skipping empty files, whether it's data or MC
+                            # skipping empty files, whether it's data or MC
                             logging.warning('Ignoring empty file %s!!! MAKE SURE THIS IS OKAY.' % os.path.join(dp, f))
                             continue
                         filelist.append(os.path.join(dp, f))
-            if len(filelist):
-                filelist = sorted(filelist)
-                md['samples'].append(samp)
-                md['inputfiles'][samp] = filelist
+
+            # skip empty samples
+            if len(filelist)==0: continue
+
+            # sort samples for more intuitive job splitting later
+            filelist = sorted(filelist)
+
+            # limit the number of files if requested
+            if args.max_files_per_sample>0 and len(filelist)>args.max_files_per_sample:
+                logging.info('Limiting number of files for sample {} to {}.'.format(samp, args.max_files_per_sample))
+                filelist = filelist[:args.max_files_per_sample]
+
+            # limit the fraction of files if requested
+            if args.file_fraction_per_sample>0:
+                nfiles = int(len(filelist)*args.file_fraction_per_sample)
+                logging.info('Limiting number of files for sample {} to {} (= {}% of total).'.format(samp, nfiles, args.file_fraction_per_sample*100))
+                filelist = filelist[:nfiles]
+
+            # re-skip empty samples after the steps above
+            if len(filelist)==0: continue
+            
+            # add results to config
+            md['samples'].append(samp)
+            md['inputfiles'][samp] = filelist
+
+    # find input files for the case of remote files
     else:
-        # use remote files
         for samp in samp_to_datasets:
             filelist = []
             dataset0 = None
             for dataset in samp_to_datasets[samp]:
-                if dataset0 is None:
-                    dataset0 = dataset.split('/')[1]
+                if dataset0 is None: dataset0 = dataset.split('/')[1]
                 else:
                     if dataset0 != dataset.split('/')[1]:
                         raise RuntimeError('Inconsistent dataset for samp `%s`: `%s` vs `%s`' % (samp, dataset0, dataset))
                 if select_sample(dataset):
                     filelist.extend(get_filenames(dataset))
-            if len(filelist):
-                filelist = sorted(filelist)
-                md['samples'].append(samp)
-                md['inputfiles'][samp] = filelist
+
+            # skip empty samples
+            if len(filelist)==0: continue
+
+            # sort samples for more intuitive job splitting later
+            filelist = sorted(filelist)
+
+            # limit the number of files if requested
+            if args.max_files_per_sample>0 and len(filelist)>args.max_files_per_sample:
+                logging.info('Limiting number of files for sample {} to {}.'.format(samp, args.max_files_per_sample))
+                filelist = filelist[:args.max_files_per_sample]
+
+            # limit the fraction of files if requested
+            if args.file_fraction_per_sample>0:
+                nfiles = int(len(filelist) * min(1, args.file_fraction_per_sample))
+                logging.info('Limiting number of files for sample {} to {} (= {}% of total).'.format(samp, nfiles, args.file_fraction_per_sample*100))
+                filelist = filelist[:nfiles]
+
+            # re-skip empty samples after the steps above
+            if len(filelist)==0: continue
+            
+            # add results to config
+            md['samples'].append(samp)
+            md['inputfiles'][samp] = filelist
 
     # sort the samples
     md['samples'] = natural_sort(md['samples'])

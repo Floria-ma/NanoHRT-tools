@@ -2,6 +2,9 @@
 **__pycache__*
 **.pyc
 
+# ignore temporary job directories
+**jobs_*
+
 # others
 .autotools
 .cproject

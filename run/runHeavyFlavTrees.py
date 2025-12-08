@@ -116,6 +116,7 @@ def _process(args):
     args.outputdir = os.path.join(os.path.dirname(args.outputdir), basename, 'data' if args.run_data else 'mc')
     args.jobdir = os.path.join('jobs_%s' % basename, 'data' if args.run_data else 'mc')
 
+    # set sample lists based on year and channel
     if args.run_data:
         args.datasets = '%s/%s_%d_DATA.yaml' % (args.sample_dir, channel, year)
         args.extra_transfer = os.path.expandvars(
@@ -124,43 +125,40 @@ def _process(args):
     else:
         args.datasets = '%s/%s_%d_MC.yaml' % (args.sample_dir, channel, year)
 
-    if args.jet_type == 'ak15':
-        args.cut = _base_cut(year, channel, apply_tagger=False)
-    else:
-        args.cut = cut_dict_ak8[channel]
-
-    #args.imports = [('PhysicsTools.NanoHRTTools.producers.HeavyFlavSFTreeProducer', 'heavyFlavSFTreeFromConfig')]
-    args.imports = [('PhysicsTools.NanoHRTTools.producers.HeavyFlavSFTreeProducer',
-                 'heavyFlavSFTreeFromConfig')]
+    # set modules to run
+    # (note: for now, only supported with the option --scouting!)
+    args.imports = [('PhysicsTools.NanoHRTTools.producers.HeavyFlavSFTreeProducer', 'heavyFlavSFTreeFromConfig')]
     
+    # special settings for scouting
     if args.scouting:
-        # Use your scouting muon producer instead of HeavyFlavSFTreeProducer
+
+        # set modules to run
         args.imports = [
             ('PhysicsTools.NanoHRTTools.producers.HeavyFlavMuonSampleProducer',
-             'MuonTree_%d' % year)  # or whatever function/class you actually defined
+             'MuonTree_%d' % year)
         ]
-        # Disable PN tagger / mass regression for scouting
+
+        # disable PN tagger / mass regression for scouting
         default_config['run_tagger'] = False
         default_config['run_mass_regression'] = False
         args.run_tagger = False
         args.run_mass_regression = False
 
-    # --- Cuts ---
-    if args.jet_type == 'ak15':
-        args.cut = _base_cut(year, channel, apply_tagger=False)
-    else:
-        args.cut = cut_dict_ak8[channel]
+    # set which base cuts to apply
+    # TO UPDATE, not clear which ones to use; for now just use base_cut for everything
+    #if args.jet_type == 'ak15': args.cut = _base_cut(year, channel, apply_tagger=False)
+    #else: args.cut = cut_dict_ak8[channel]
+    args.cut = _base_cut(year, channel, apply_tagger=False)
 
+    # set  year to use for pileup reweighting
     if year == 2015:
         PUyear = 2016
     elif year == 2021:
         PUyear = 2022
-    elif year == 2024:
-        PUyear = 2024
     else:
         PUyear = year
 
-    # are there any for 2024?
+    # add pileup reweighting for simulation
     if not args.run_data:
         args.imports.extend([('PhysicsTools.NanoAODTools.postprocessing.modules.common.puWeightProducer',
                               'puWeight_UL%d' % PUyear),
@@ -226,6 +224,9 @@ def _process(args):
 
 
 def main():
+
+    # read command line args
+
     parser = get_arg_parser()
 
     parser.add_argument('--scouting',
@@ -285,39 +286,56 @@ def main():
                         nargs=2, action='append', default=[],
                         help='options to pass to the producer, e.g., `--po apply_tight_selection False`')
 
+    parser.add_argument('--max-files-per-sample', type=int, default=-1,
+                        help='Maximum number of files to process per sample (default: process all files).')
+
+    parser.add_argument('--file-fraction-per-sample', type=float, default=-1,
+                        help='Fraction of files to process per sample (default: process all files).')
+
     args = parser.parse_args()
 
+    # make a tarred CMSSW file
     if not (args.post or args.add_weight or args.merge):
         tar_cmssw(args.tarball_suffix)
 
+    # find years, channels, and data types
     years = args.year.split(',')
     channels = args.channel.split(',')
     categories = ['data' if args.run_data else 'mc']
 
+    # find extra producer options
     producer_options = {k: ast.literal_eval(v) for k, v in args.producer_option}
     if len(producer_options):
         logging.info(f'Updating default_config with options: {producer_options}')
         default_config.update(producer_options)
 
+    # loop over year, channels, and data types
     for year in years:
         for chn in channels:
             for cat in categories:
                 opts = copy.deepcopy(args)
+
+                # special settings for data
                 if cat == 'data':
                     opts.run_data = True
                     opts.nfiles_per_job *= 2
+
+                # formatting of input directory
                 if opts.inputdir:
                     opts.inputdir = opts.inputdir.rstrip('/').replace('_YEAR_', year)
-                    #It's a mess with the Run 3 parts, let's just assume it's okay for now
-                    #if not (( int(year) == 2015) and ('2016APV' in opts.inputdir)):
-                    #    assert(year in opts.inputdir)
                     if opts.inputdir.rsplit('/', 1)[1] not in ['data', 'mc']:
                         opts.inputdir = os.path.join(opts.inputdir, cat)
                     assert(opts.inputdir.endswith(cat))
+
+                # set year and channel
                 opts.year = int(year)
                 opts.channel = chn
+
+                # printouts
                 logging.info('inputdir=%s, year=%d, channel=%s, cat=%s, syst=%s', opts.inputdir, opts.year,
                              opts.channel, 'data' if opts.run_data else 'mc', 'syst' if opts.run_syst else 'none')
+
+                # run with provided options
                 _process(opts)
 
 
