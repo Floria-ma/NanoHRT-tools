@@ -148,8 +148,8 @@ class HeavyFlavBaseProducerScouting(Module, object):
             self.out.branch(prefix + "phi", "F")
             self.out.branch(prefix + "mass", "F")
             #self.out.branch(prefix + "rawmass", "F")
-            #self.out.branch(prefix + "sdmass", "F")
-            #self.out.branch(prefix + "ParT_resonanceMass", "F")
+            self.out.branch(prefix + "sdmass", "F")
+            self.out.branch(prefix + "ParT_resonanceMass", "F")
             self.out.branch(prefix + "tau21", "F")
             self.out.branch(prefix + "tau32", "F")
             #self.out.branch(prefix + "btagcsvv2", "F")
@@ -316,14 +316,16 @@ class HeavyFlavBaseProducerScouting(Module, object):
         # HT = scalar sum of selected AK4 jet pT
         event.ht = float(sum(j.pt for j in event.ak4jets))
 
-    def _evalMassRegression(self, jets):
+    def evalMassRegression(self, jets):
         for j in jets:
-            j.masses = {
-                'sdmass': j.msoftdrop,
+            j.ParT_resonanceMass = j.scoutGlobalParT_massCorrResonance * j.mass
+            j.sdmass = j.msoftdrop
+            #j.masses = {
+            #    'sdmass': j.msoftdrop,
                 #'regressed_mass': j.particleNet_mass,
-                'ParT_resonanceMass': j.scoutGlobalParT_massCorrResonance * j.mass,# * (1. - j.rawFactor),
+            #    'ParT_resonanceMass': j.scoutGlobalParT_massCorrResonance * j.mass,# * (1. - j.rawFactor),
                 #'ParT_visibleMass': j.ParT_visiableMassCorr * j.mass * (1. - j.rawFactor),
-            }
+            #}
 
     def fillBaseEventInfo(self, event):
         # jet radius (use reclustered fatjet R)
@@ -494,8 +496,8 @@ class HeavyFlavBaseProducerScouting(Module, object):
             self.out.fillBranch(prefix + "phi", fj.phi)
             self.out.fillBranch(prefix + "mass", getattr(fj, "mass", 0.0))
             #self.out.fillBranch(prefix + "rawmass", fj.mass)
-            #self.out.fillBranch(prefix + "sdmass", fj.msoftdrop)
-            #self.out.fillBranch(prefix + "ParT_resonanceMass", fj.ParT_resonanceMass)
+            self.out.fillBranch(prefix + "sdmass", fj.msoftdrop)
+            self.out.fillBranch(prefix + "ParT_resonanceMass", fj.ParT_resonanceMass)
             tau1 = getattr(fj, "tau1", -1)
             tau2 = getattr(fj, "tau2", -1)
             tau3 = getattr(fj, "tau3", -1)

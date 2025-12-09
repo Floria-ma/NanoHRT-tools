@@ -25,7 +25,7 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         self.out.branch("muon_pt", "F")
         self.out.branch("muon_eta", "F")
         self.out.branch("muon_phi", "F")
-        self.out.branch("muon_miniIso", "F")
+        #self.out.branch("muon_miniIso", "F")
 
         # Leptonic W
         self.out.branch("leptonicW_pt", "F")
@@ -75,7 +75,7 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         #probe_fj = probe_jets[0]
         probe_jets = probe_jets[:1]
         self.loadGenHistory(event, probe_jets)
-        #self.evalMassRegression(event, probe_jets)
+        self.evalMassRegression(probe_jets)
 
         # fill output branches
         self.fillBaseEventInfo(event)
@@ -86,6 +86,7 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         self.out.fillBranch("muon_pt", event.mu.pt)
         self.out.fillBranch("muon_eta", event.mu.eta)
         #self.out.fillBranch("muon_miniIso", event.mu.miniPFRelIso_all)
+        self.out.fillBranch("muon_phi", event.mu.phi)
         self.out.fillBranch("leptonicW_pt", event.leptonicW.Pt())
 
         return True
