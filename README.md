@@ -35,7 +35,11 @@ scram b -j8
 
 Prepare all jobs (for simulation):
 ```bash
-python3 runHeavyFlavTrees.py --scouting -i /eos/cms/store/cmst3/group/vhcc/ScoutingNanoAOD/2024 -o /eos/user/z/zima/HadronicVH/20251204_ULNanoV9_MassRegression --jet-type ak15 --channel muon --year 2024 -n 20 --condor-extras '+AccountingGroup = "group_u_CMST3.all" ' --po jec False --po jes False --po jer False --sfbdt 0 --run-syst
+python3 runHeavyFlavTrees.py --scouting -i /eos/cms/store/cmst3/group/vhcc/ScoutingNanoAOD/2024 -o /eos/user/z/zima/HadronicVH/20251209_ULNanoV9_MassRegression --jet-type ak8 --channel muon --year 2024 -n 20 --condor-extras '+AccountingGroup = "group_u_CMST3.all" ' --po jec False --po jes False --po jer False --sfbdt 0 --file-fraction-per-sample 0.5
+```
+Once all jobs done, run:
+```bash
+python3 runHeavyFlavTrees.py --scouting -i /eos/cms/store/cmst3/group/vhcc/ScoutingNanoAOD/2024 -o /eos/user/z/zima/HadronicVH/20251209_ULNanoV9_MassRegression --jet-type ak8 --channel muon --year 2024 -n 20 --condor-extras '+AccountingGroup = "group_u_CMST3.all" ' --po jec False --po jes False --po jer False --sfbdt 0 --file-fraction-per-sample 0.5 --post
 ```
 
 Test locally (optional but recommended after every change) by going into `jobs_<name of output>/mc`
