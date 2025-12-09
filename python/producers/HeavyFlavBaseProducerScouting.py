@@ -128,7 +128,7 @@ class HeavyFlavBaseProducerScouting(Module, object):
         self.out.branch("ht", "F")
         self.out.branch("met", "F")
         self.out.branch("met_phi", "F")
-        #self.out.branch("passTrigPFHTScouting", "O")
+        self.out.branch("passTrigPFHTScouting", "O")
 
         # prefiring weight branches
         # (not really defined for 2024 and/or scouting,
@@ -137,6 +137,7 @@ class HeavyFlavBaseProducerScouting(Module, object):
         self.out.branch("l1PreFiringWeightUp", "F")
         self.out.branch("l1PreFiringWeightDown", "F")
         
+
         # Large-R jets
         for idx in ([1, 2] if self._channel in ['qcd', 'mutagged'] else [1]):
             prefix = 'fj_%d_' % idx
@@ -358,7 +359,7 @@ class HeavyFlavBaseProducerScouting(Module, object):
         
         self.out.fillBranch("passmetfilters", met_filters)
         # trigger
-        #self.out.fillBranch("passTrigPFHTScouting", passTrigger(event,["DST_PFScouting_JetHT"]))
+        self.out.fillBranch("passTrigPFHTScouting", passTrigger(event,["DST_PFScouting_JetHT"]))
 
         # fill prefire weight branches with dummy values
         self.out.fillBranch("l1PreFiringWeight", 1.0)
