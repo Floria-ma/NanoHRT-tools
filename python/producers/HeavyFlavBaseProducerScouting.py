@@ -136,7 +136,6 @@ class HeavyFlavBaseProducerScouting(Module, object):
         self.out.branch("l1PreFiringWeight", "F")
         self.out.branch("l1PreFiringWeightUp", "F")
         self.out.branch("l1PreFiringWeightDown", "F")
-        
 
         # Large-R jets
         for idx in ([1, 2] if self._channel in ['qcd', 'mutagged'] else [1]):
