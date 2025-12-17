@@ -8,7 +8,7 @@ drop bunchCrossing
 keep run
 keep luminosityBlock
 keep event
-keep PV_npvs
+#keep PV_npvs
 # triggers
 # keep HLT_Iso*Mu24
 # keep HLT_IsoMu27
@@ -24,9 +24,9 @@ keep PV_npvs
 #keep HLT_PFHT*
 
 # genweight
-keep genWeight
-keep LHE_Vpt
-keep genTtbarId
+#keep genWeight
+#keep LHE_Vpt
+#keep genTtbarId
 # muR/muF scale weights
-keep *LHEScaleWeight
-keep *PSWeight
+#keep *LHEScaleWeight
+#keep *PSWeight

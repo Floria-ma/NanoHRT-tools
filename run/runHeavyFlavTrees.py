@@ -118,12 +118,10 @@ def _process(args):
         args.run_mass_regression = False
 
     # set which base cuts to apply
-    # TO UPDATE, not clear which ones to use; for now just use base_cut for everything
     #if args.jet_type == 'ak15': 
     #    args.cut = cut_dict_ak15[channel]
     #else: 
     #    args.cut = cut_dict_ak8[channel]
-    #args.cut = _base_cut(year, channel, apply_tagger=False)
 
     # set  year to use for pileup reweighting
     if year == 2015:
@@ -136,6 +134,7 @@ def _process(args):
         PUyear = year
 
     # add pileup reweighting for simulation
+    # 
     if not args.run_data:
         args.imports.extend([('PhysicsTools.NanoAODTools.postprocessing.modules.common.puWeightProducer',
                               'puWeight_UL%d' % PUyear),
@@ -232,7 +231,7 @@ def main():
                         help='Run all the systematic trees. Default: %(default)s'
                         )
 
-    parser.add_argument('--run-data',
+    parser.add_argument('--run_data',
                         action='store_true', default=False,
                         help='Run over data. Default: %(default)s'
                         )

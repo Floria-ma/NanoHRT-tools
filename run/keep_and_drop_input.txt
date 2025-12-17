@@ -2,7 +2,7 @@
 dropmatch n?PFCands_.+
 
 # SV
-drop SV_*
+#drop SV_*
 
 # AK8 jets
 dropmatch n?FatJet_.+
@@ -12,9 +12,9 @@ dropmatch n?SubGenJetAK8_.+
 
 # AK4 jets
 dropmatch Jet_(b|c)Reg(Corr|res)
-drop Jet_*EF
-keep Jet_*EmEF
-drop Jet_btag*
+#drop Jet_*EF
+#keep Jet_*EmEF
+#drop Jet_btag*
 
 # Electron
 drop ScoutingElectron_*

@@ -339,7 +339,7 @@ class HeavyFlavBaseProducerScouting(Module, object):
         def _safe_flag(name, default=True):
             try:
                 return bool(getattr(event, name))
-            except AttributeError:
+            except (AttributeError,RuntimeError):
                 return default
 
         met_filters = (

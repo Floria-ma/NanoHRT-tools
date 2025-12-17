@@ -31,6 +31,11 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         self.out.branch("leptonicW_pt", "F")
 
     def analyze(self, event):
+        
+        print(
+            f">>> run={event.run} lumi={event.luminosityBlock} event={event.event}",
+            flush=True
+        )
 
         # muon selection
         event._allMuons = Collection(event, "ScoutingMuonVtx")
@@ -64,7 +69,7 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         
         event.bjets = bjets
         fatjets = event.fatjets
-        if len(fatjets) < 1:
+        if len(fatjets) == 0:
             return False
 
         #Fatjet selection (must be far from muon)
