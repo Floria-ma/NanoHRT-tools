@@ -324,6 +324,12 @@ def create_metadata(args):
             filelist = []
             dataset0 = None
             for dataset in samp_to_datasets[samp]:
+                # check if the name of this dataset has the expected format
+                dataset_parts = dataset.split('/')
+                if len(dataset_parts)!=3:
+                    msg = f'Data set {dataset} does not seem to have the expected DAS format.'
+                    raise Exception(msg)
+                # check consistency
                 if dataset0 is None: dataset0 = dataset.split('/')[1]
                 else:
                     if dataset0 != dataset.split('/')[1]:

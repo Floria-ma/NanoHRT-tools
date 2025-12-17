@@ -41,7 +41,10 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
 
         # muon selection: select events with exactly 1 good muon, reject all others
         event._allMuons = Collection(event, "ScoutingMuonVtx")
-        event.muons = [mu for mu in event._allMuons if mu.pt > 55 and abs(mu.eta) < 2.4]
+        event.muons = [mu for mu in event._allMuons
+                       if mu.pt > 55 and abs(mu.eta) < 2.4
+                       and abs(mu.trk_dxy) < 0.2 and abs(mu.trk_dz) < 0.5
+                       and mu.trackIso < 0.10]
         if len(event.muons) != 1: return False
         event.mu = event.muons[0]
 
@@ -61,8 +64,8 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
 
         # b-jet selection: select events where there is at least one b-tagged jet
         # relatively close to the selected muon.
-        # note: to update for scouting, right now just use all jets.
-        bjets = [j for j in event.ak4jets if abs(deltaPhi(j, event.mu)) < 2]
+        # note: preliminary; to find out which scores and threshold to use for 2024 scouting.
+        bjets = [j for j in event.ak4jets if j.particleNet_prob_b > self.scouting_ak4_PNet_WP_M and abs(deltaPhi(j, event.mu)) < 2]
         if len(bjets) == 0: return False
         event.bjets = bjets
 

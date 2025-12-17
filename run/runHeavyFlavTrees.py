@@ -34,8 +34,9 @@ default_config = {
 #       implemented in the producer!
 cut_dict_ak8 = {
     'muon': ('Sum$(ScoutingMuonVtx_pt>55 && abs(ScoutingMuonVtx_eta)<2.4)>0' # at least one muon
-             + ' && nScoutingPFJet>0' # at least one (ak4) jet
-             + ' && nScoutingFatPFJetRecluster>0'), # at least one fat (ak8) jet
+             + ' && nScoutingPFJetRecluster>0' # at least one (ak4) jet
+             + ' && nScoutingFatPFJetRecluster>0' # at least one fat (ak8) jet
+             + ' && DST_PFScouting_SingleMuon==1'), # trigger
 }
 
 # to update for scouting!
@@ -296,7 +297,6 @@ def main():
                 # special settings for data
                 if cat == 'data':
                     opts.run_data = True
-                    #opts.nfiles_per_job *= 2
 
                 # formatting of input directory
                 if opts.inputdir:

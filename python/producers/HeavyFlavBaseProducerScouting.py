@@ -81,7 +81,6 @@ class HeavyFlavBaseProducerScouting(Module, object):
             else:
                 self._opts[k] = kwargs[k]
 
-        #self._needsJMECorr = False  
         self._needsJMECorr = any([self._jmeSysts['jec'], self._jmeSysts['jes'],
                                   self._jmeSysts['jer'], self._jmeSysts['jmr'],
                                   self._jmeSysts['met_unclustered'], self._jmeSysts['applyHEMUnc']])
@@ -90,10 +89,9 @@ class HeavyFlavBaseProducerScouting(Module, object):
 
         self._doJetCleaning = True
 
-        #if self.jetType == 'ak8':
-        # pfjet collection
-        self._ak4_name = "ScoutingPFJet"
-        # fatjet collection
+        # set name of regular jet collection (usually ak4)
+        self._ak4_name = "ScoutingPFJetRecluster"
+        # set name and cone size of fatjet collection
         self._fatjet_name = "ScoutingFatPFJetRecluster"
         self._jetConeSize = 0.8 # we use ak8 for now
 
@@ -101,6 +99,12 @@ class HeavyFlavBaseProducerScouting(Module, object):
             "HeavyFlavBaseProducerScouting: channel=%s, year=%s, ak4=%s, fatjets=%s",
             self._channel, self.year, self._ak4_name, self._fatjet_name
         )
+
+        # set b-tagging working points (for scouting ak4 ParticleNet)
+        # note: this is preliminary; to find out which scores and which thresholds to use exactly!
+        self.scouting_ak4_PNet_WP_M = {
+            2024: 0.1919
+        }[self.year]
 
     def beginJob(self):
         # nothing heavy to initialize for scouting
@@ -242,20 +246,18 @@ class HeavyFlavBaseProducerScouting(Module, object):
     def correctJetAndMET(self, event):
         # initialize jets and MET
        
-        #event.idx = event._entry if event._tree._entrylist is None else event._tree._entrylist.GetEntry(event._entry)
-
-        # scoutingPFJet
+        # scoutingPFJetRecluster
         try:
             event._allJets = Collection(event, self._ak4_name)
         except RuntimeError:
-            logger.error("ScoutingPFJet collection not found in event")
+            logger.error(f"{self._ak4_name} collection not found in event")
             event._allJets = []
 
         # scoutingFatPFJetRecluster
         try:
             event._allFatJets = Collection(event, self._fatjet_name)
         except RuntimeError:
-            logger.error("ScoutingFatPFJetRecluster collection not found in event")
+            logger.error(f"{self._fatjet_name} collection not found in event")
             event._allFatJets = []
 
         # MET
