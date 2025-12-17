@@ -79,13 +79,16 @@ def main(args):
     # do printouts for easier checking what's going on
     print('Found following input files:')
     for filepath in filepaths: print(f'  - {filepath}')
-    print('Running PostProcessor with the following settings:')
+    print('Found following settings for the PostProcessor:')
     print(f'  - Preselection cut: {md.get("cut")}')
     print(f'  - Preselection json: {md.get("json")}')
     print(f'  - Modules: {modules}')
     # add more info as needed in debugging...
 
     # run the postprocessor
+    print('Running PostProcessor...')
+    sys.stdout.flush()
+    sys.stderr.flush()
     p = PostProcessor(outputDir='.',
                       inputFiles=filepaths,
                       cut=md.get('cut'),
@@ -104,9 +107,29 @@ def main(args):
                       outputbranchsel=os.path.basename(md['branchsel_out'])
                       )
     p.run()
+    sys.stdout.flush()
+    sys.stderr.flush()
+
+    # sort files in descending order by number of entries
+    # (hadd crashes if the first file to merge has 0 events)
+    output_files = [f for f in os.listdir() if f.endswith('.root')]
+    nentries = []
+    for output_file in output_files:
+        f = ROOT.TFile.Open(output_file)
+        tree = f.Get('Events')
+        nentries.append(tree.GetEntries())
+        f.Close()
+    sorted_ids = sorted(range(len(nentries)), key=lambda idx: nentries[idx], reverse=True)
+    output_files = [output_files[idx] for idx in sorted_ids]
+    nentries = [nentries[idx] for idx in sorted_ids]
+    print('Found following number of entries in output files:')
+    for f, n in zip(output_files, nentries): print(f'  - {f}: {n}')
 
     # hadd files
-    p = subprocess.Popen('haddnano.py %s *.root' % outputname, shell=True)
+    cmd = f'haddnano.py {outputname} ' + ' '.join(output_files)
+    print('Running haddnano as follows:')
+    print(cmd)
+    p = subprocess.Popen(cmd, shell=True)
     p.communicate()
     if p.returncode != 0:
         raise RuntimeError('Hadd failed!')
