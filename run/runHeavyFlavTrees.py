@@ -27,26 +27,20 @@ default_config = {
     'use_nn_classifier': False,  # Whether to use a neural network classifier
 }
 
-#for muon, muon_pt & ScoutingMuonVtx_pt both exist, for now using ScoutingMuonVtx_pt for ScoutingNano
+# define preselection
+# note: this can be used to make the processing a lot faster
+#       by filtering out the majority of uninteresting events with simple cuts;
+#       but make sure these cuts are nowhere tighter than the detailed selection
+#       implemented in the producer!
 cut_dict_ak8 = {
-    'photon': 'Sum$(Photon_pt>200 && Photon_cutBased>=2 && Photon_electronVeto)>0 && nFatJet>0',
-    'qcd': 'Sum$((Jet_pt>25 && abs(Jet_eta)<2.4 && (Jet_jetId & 2)) * Jet_pt)>200 && nFatJet>0',
-    #'muon': 'Sum$(Muon_pt>55 && abs(Muon_eta)<2.4 && Muon_tightId && Muon_miniPFRelIso_all<0.10)>0 && nFatJet>0',
-    'muon': 'Sum$(ScoutingMuonVtx_pt>55 && abs(ScoutingMuonVtx_eta)<2.4 && nFatJet>0',
-    'diboson': '(Sum$(Electron_pt>20 && abs(Electron_eta)<2.5 && abs(Electron_dxy)<0.05 && abs(Electron_dz)<0.2 && Electron_mvaFall17V2noIso_WP90 && Electron_miniPFRelIso_all<0.4) >= 2 ||'
-               ' Sum$(Muon_pt>20 && abs(Muon_eta)<2.4 && abs(Muon_dxy)<0.05 && abs(Muon_dz)<0.2 && Muon_looseId && Muon_miniPFRelIso_all<0.4) >= 2) && nFatJet>0',
-    'inclusive': 'Sum$((Jet_pt>25 && abs(Jet_eta)<2.4 && (Jet_jetId & 2)) * Jet_pt)>300 && Sum$(FatJet_subJetIdx1>=0 && FatJet_subJetIdx2>=0 && FatJet_msoftdrop>10)>0',
-    'higgs': 'nFatJet>0',
-    'mutagged': 'Sum$((Jet_pt>25 && abs(Jet_eta)<2.4 && (Jet_jetId & 2)) * Jet_pt)>200 && nFatJet>0',
+    'muon': ('Sum$(ScoutingMuonVtx_pt>55 && abs(ScoutingMuonVtx_eta)<2.4)>0' # at least one muon
+             + ' && nScoutingPFJet>0' # at least one (ak4) jet
+             + ' && nScoutingFatPFJetRecluster>0'), # at least one fat (ak8) jet
 }
 
+# to update for scouting!
 cut_dict_ak15 = {
-    'photon': 'Sum$(Photon_pt>200 && Photon_cutBased>=2 && Photon_electronVeto)>0 && nAK15Puppi>0',
-    'qcd': 'Sum$((Jet_pt>25 && abs(Jet_eta)<2.4 && (Jet_jetId & 2)) * Jet_pt)>200 && nAK15Puppi>0',
     'muon': 'Sum$(Muon_pt>55 && abs(Muon_eta)<2.4 && Muon_tightId && Muon_miniPFRelIso_all<0.10)>0 && nAK15Puppi>0',
-    'diboson': '(Sum$(Electron_pt>20 && abs(Electron_eta)<2.5 && abs(Electron_dxy)<0.05 && abs(Electron_dz)<0.2 && Electron_mvaFall17V2noIso_WP90 && Electron_miniPFRelIso_all<0.4) >= 2 ||'
-               ' Sum$(Muon_pt>20 && abs(Muon_eta)<2.4 && abs(Muon_dxy)<0.05 && abs(Muon_dz)<0.2 && Muon_looseId && Muon_miniPFRelIso_all<0.4) >= 2) && nAK15Puppi>0',
-    'inclusive': 'Sum$((Jet_pt>25 && abs(Jet_eta)<2.4 && (Jet_jetId & 2)) * Jet_pt)>300 && Sum$(AK15Puppi_subJetIdx1>=0 && AK15Puppi_subJetIdx2>=0 && AK15Puppi_msoftdrop>10)>0',
 }
 
 golden_json = {
@@ -90,13 +84,20 @@ def _process(args):
     args.jobdir = os.path.join('jobs_%s' % basename, 'data' if args.run_data else 'mc')
 
     # set sample lists based on year and channel
+    # update: also allow to specify the sample list directly as command line argument for more flexibility
+    if args.datasets is not None: pass # if args.datasets is already specified, no need to do anything
+    else:
+        if args.run_data: args.datasets = '%s/%s_%d_DATA.yaml' % (args.sample_dir, channel, year)
+        else: args.datasets = '%s/%s_%d_MC.yaml' % (args.sample_dir, channel, year)
+    if not os.path.exists(args.datasets):
+        msg = f'Requested sample list {args.datasets} does not exist.'
+        raise Exception(msg)
+
+    # set golden json file for data
     if args.run_data:
-        args.datasets = '%s/%s_%d_DATA.yaml' % (args.sample_dir, channel, year)
         args.extra_transfer = os.path.expandvars(
             '$CMSSW_BASE/src/PhysicsTools/NanoHRTTools/data/JSON/%s' % golden_json[year])
         args.json = golden_json[year]
-    else:
-        args.datasets = '%s/%s_%d_MC.yaml' % (args.sample_dir, channel, year)
 
     # set modules to run
     # (note: for now, only supported with the option --scouting!)
@@ -118,10 +119,8 @@ def _process(args):
         args.run_mass_regression = False
 
     # set which base cuts to apply
-    #if args.jet_type == 'ak15': 
-    #    args.cut = cut_dict_ak15[channel]
-    #else: 
-    #    args.cut = cut_dict_ak8[channel]
+    if args.jet_type == 'ak15': args.cut = cut_dict_ak15.get(channel, None)
+    else: args.cut = cut_dict_ak8.get(channel, None)
 
     # set  year to use for pileup reweighting
     if year == 2015:
@@ -133,8 +132,7 @@ def _process(args):
     else:
         PUyear = year
 
-    # add pileup reweighting for simulation
-    # 
+    # add pileup reweighting for simulation 
     if not args.run_data:
         args.imports.extend([('PhysicsTools.NanoAODTools.postprocessing.modules.common.puWeightProducer',
                               'puWeight_UL%d' % PUyear),
@@ -201,10 +199,14 @@ def _process(args):
 
 def main():
 
-    # read command line args
-
+    # get standard command line args, such as:
+    # -i for input directory where the samples are
+    # -o for output directory where the ntuples should be placed
+    # -d for the dataset file listing the samples to process
+    # -n for the number of files per job
     parser = get_arg_parser()
 
+    # get custom command line args
     parser.add_argument('--scouting',
                     action='store_true', default=False,
                     help='Use scouting producers instead of HeavyFlav UL Nano producers')
@@ -294,7 +296,7 @@ def main():
                 # special settings for data
                 if cat == 'data':
                     opts.run_data = True
-                    opts.nfiles_per_job *= 2
+                    #opts.nfiles_per_job *= 2
 
                 # formatting of input directory
                 if opts.inputdir:

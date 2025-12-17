@@ -47,11 +47,13 @@ def outputName(md, jobid):
 def main(args):
 
     # load job metadata
+    print('Loading job metadata...')
     with open(args.metadata) as fp:
         md = json.load(fp)
 
     # load modules
     modules = []
+    print('Loading modules...')
     for mod, names in md['imports']:
         import_module(mod)
         obj = sys.modules[mod]
@@ -69,11 +71,21 @@ def main(args):
             print('Removing file %s' % f)
             os.remove(f)
 
-    # run postprocessor
+    # get input and output settings
     inputfiles = args.files if len(args.files) else md['jobs'][args.jobid]['inputfiles']
     filepaths, allow_prefetch = xrd_prefix(inputfiles)
-    print(filepaths)
     outputname = outputName(md, args.jobid)
+
+    # do printouts for easier checking what's going on
+    print('Found following input files:')
+    for filepath in filepaths: print(f'  - {filepath}')
+    print('Running PostProcessor with the following settings:')
+    print(f'  - Preselection cut: {md.get("cut")}')
+    print(f'  - Preselection json: {md.get("json")}')
+    print(f'  - Modules: {modules}')
+    # add more info as needed in debugging...
+
+    # run the postprocessor
     p = PostProcessor(outputDir='.',
                       inputFiles=filepaths,
                       cut=md.get('cut'),

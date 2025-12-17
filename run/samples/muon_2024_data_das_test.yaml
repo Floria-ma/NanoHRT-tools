@@ -1,0 +1,6 @@
+# This is a sample list usable for testing.
+# It contains only a small part of 2024 data (only era C),
+# and reads the centrally produced NanoAODs (i.e. via DAS).
+
+singlemu:
+- /ScoutingPFRun3/Run2024C-ScoutNano-v1/NANOAOD

@@ -31,53 +31,48 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         self.out.branch("leptonicW_pt", "F")
 
     def analyze(self, event):
-        
-        print(
-            f">>> run={event.run} lumi={event.luminosityBlock} event={event.event}",
-            flush=True
-        )
 
-        # muon selection
+        # print event being analyzed
+        # (only for debugging, disable for production)        
+        #print(
+        #    f">>> run={event.run} lumi={event.luminosityBlock} event={event.event}",
+        #    flush=True
+        #)
+
+        # muon selection: select events with exactly 1 good muon, reject all others
         event._allMuons = Collection(event, "ScoutingMuonVtx")
         event.muons = [mu for mu in event._allMuons if mu.pt > 55 and abs(mu.eta) < 2.4]
-
-        if len(event.muons) != 1:
-            return False
-
+        if len(event.muons) != 1: return False
         event.mu = event.muons[0]
 
-        #Select leptons for jet cleaning
+        # select leptons for jet cleaning
         self.selectLeptons(event)
 
-        #Jet & MET collections (no corrections in scouting)
+        # get jet & MET collections (no corrections in scouting)
         self.correctJetAndMET(event)
 
-        #MET selection
-        if event.met.pt < 50:
-            return False
+        # MET selection
+        if event.met.pt < 50: return False
 
-        #Leptonic W
+        # leptonic W pt selection
         event.mu._mass = 0.1057
         event.leptonicW = polarP4(event.mu, mass="_mass") + event.met.p4()
-        if event.leptonicW.Pt() < 100:
-            return False
+        if event.leptonicW.Pt() < 100: return False
 
-        # "b-jet" selection (no real b-tags in scouting)
+        # b-jet selection: select events where there is at least one b-tagged jet
+        # relatively close to the selected muon.
+        # note: to update for scouting, right now just use all jets.
         bjets = [j for j in event.ak4jets if abs(deltaPhi(j, event.mu)) < 2]
-        if len(bjets) == 0:
-            return False
-        
+        if len(bjets) == 0: return False
         event.bjets = bjets
-        fatjets = event.fatjets
-        if len(fatjets) == 0:
-            return False
 
-        #Fatjet selection (must be far from muon)
+        # fat-jet selection: select events where there is at least one fat jet
+        # relatively far from the selected muon.
+        if len(event.fatjets) == 0: return False
         probe_jets = [fj for fj in event.fatjets if abs(deltaPhi(fj, event.mu)) > 2]
-        if len(probe_jets) == 0:
-            return False
+        if len(probe_jets) == 0: return False
 
-        #probe_fj = probe_jets[0]
+        # selection is done, now calculate event properties
         probe_jets = probe_jets[:1]
         self.loadGenHistory(event, probe_jets)
         self.evalMassRegression(probe_jets)
@@ -85,12 +80,9 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         # fill output branches
         self.fillBaseEventInfo(event)
         self.fillFatJetInfo(event, probe_jets)
-        
-        # fill
         self.out.fillBranch("passMuTrig", passTrigger(event, ["DST_PFScouting_SingleMuon"]))
         self.out.fillBranch("muon_pt", event.mu.pt)
         self.out.fillBranch("muon_eta", event.mu.eta)
-        #self.out.fillBranch("muon_miniIso", event.mu.miniPFRelIso_all)
         self.out.fillBranch("muon_phi", event.mu.phi)
         self.out.fillBranch("leptonicW_pt", event.leptonicW.Pt())
 
