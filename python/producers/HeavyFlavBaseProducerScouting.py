@@ -90,6 +90,7 @@ class HeavyFlavBaseProducerScouting(Module, object):
         self._doJetCleaning = True
 
         # set name of regular jet collection (usually ak4)
+        #self._ak4_name = "ScoutingPFJet"
         self._ak4_name = "ScoutingPFJetRecluster"
         # set name and cone size of fatjet collection
         self._fatjet_name = "ScoutingFatPFJetRecluster"

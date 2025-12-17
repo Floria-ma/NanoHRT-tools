@@ -45,7 +45,9 @@ dropmatch n?ScoutingPrimaryVertex_.+
 
 # HLT
 drop HLT*
-keep DST*
+drop DST*
+keep DST_PFScouting_SingleMuon
+keep HLT_Mu50
 
 # L1/TrigObj
 dropmatch n?L1_.+
