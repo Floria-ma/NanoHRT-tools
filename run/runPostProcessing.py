@@ -325,7 +325,7 @@ def create_metadata(args):
             dataset0 = None
             for dataset in samp_to_datasets[samp]:
                 # check if the name of this dataset has the expected format
-                dataset_parts = dataset.split('/')
+                dataset_parts = dataset.strip('/').split('/')
                 if len(dataset_parts)!=3:
                     msg = f'Data set {dataset} does not seem to have the expected DAS format.'
                     raise Exception(msg)
