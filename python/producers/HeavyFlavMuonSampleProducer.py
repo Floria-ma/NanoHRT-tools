@@ -2,6 +2,8 @@ import logging
 from PhysicsTools.NanoAODTools.postprocessing.framework.datamodel import Collection
 from ..helpers.utils import deltaPhi, polarP4, configLogger
 from ..helpers.triggerHelper import passTrigger
+from ..helpers.utils import deltaR, closest
+from ..helpers.nnHelper import convert_prob
 
 from .HeavyFlavBaseProducerScouting import HeavyFlavBaseProducerScouting
 
@@ -43,6 +45,16 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         self.out.branch("bjet_particleNet_prob_uds", "F")
         self.out.branch("bjet_particleNet_prob_g", "F")
 
+        # closest fat jet to the b-jet scores
+        prefix = "bjet_closestFatJet_"
+        self.out.branch(prefix + "scoutGloParT_Xbb", "F")
+        self.out.branch(prefix + "scoutGloParT_Xbc", "F")
+        self.out.branch(prefix + "scoutGloParT_Xbs", "F")
+        self.out.branch(prefix + "scoutGloParT_HbbVsQCD", "F")
+        self.out.branch(prefix + "scoutGloParT_HbqVsQCD",  "F")
+        self.out.branch(prefix + "scoutGloParT_HcsVsQCD",  "F")
+        self.out.branch(prefix + "scoutGloParT_HbbVsHcc", "F")
+
     def analyze(self, event):
 
         # print event being analyzed
@@ -79,17 +91,41 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         event.leptonicW = polarP4(event.mu, mass="_mass") + event.met.p4()
         if event.leptonicW.Pt() < 100: return False
 
+        # for each ak4 jet, find the closest ak8 jet from the uncleaned collection
+        # some baseline cuts on the fatjets
+        allFatJetsSelected = [fj for fj in event._allFatJets
+                              if fj.pt > 200 and abs(fj.eta) < 2.4]
+
+        for j in event.ak4jets:
+            closestFatJet, dr = closest(j, allFatJetsSelected)
+            j.closestFatJet = closestFatJet
+            # define the scouting ParT b tagging scores for the closest fatjet
+            j.closestak8_scoutGlobalParT_prob_Xbb = closestFatJet.scoutGlobalParT_prob_Xbb if closestFatJet else -1
+            j.closestak8_scoutGlobalParT_prob_Xbc = closestFatJet.scoutGlobalParT_prob_Xbc if closestFatJet else -1
+            j.closestak8_scoutGlobalParT_prob_Xbs = closestFatJet.scoutGlobalParT_prob_Xbs if closestFatJet else -1
+            j.closestak8_scoutGlobalParT_HbbVsQCD = convert_prob(closestFatJet, ['Xbb'], ['QCD'], prefix='scoutGlobalParT_prob_') if closestFatJet else -1
+            j.closestak8_scoutGlobalParT_HbqVsQCD = convert_prob(closestFatJet, ['Xbc','Xbs'], ['QCD'], prefix='scoutGlobalParT_prob_') if closestFatJet else -1
+            j.closestak8_scoutGlobalParT_HcsVsQCD = convert_prob(closestFatJet, ['Xcs'], ['QCD'], prefix='scoutGlobalParT_prob_') if closestFatJet else -1
+            # fill also in the output tree for the closest fatjet
+            prefix = "bjet_closestFatJet_"
+            self.out.fillBranch(prefix + "scoutGloParT_Xbb", getattr(closestFatJet, "scoutGlobalParT_prob_Xbb", -1))
+            self.out.fillBranch(prefix + "scoutGloParT_Xbc", getattr(closestFatJet, "scoutGlobalParT_prob_Xbc", -1))
+            self.out.fillBranch(prefix + "scoutGloParT_Xbs", getattr(closestFatJet, "scoutGlobalParT_prob_Xbs", -1))
+            self.out.fillBranch(prefix + "scoutGloParT_HbbVsQCD", convert_prob(closestFatJet, ['Xbb'], ['QCD'], prefix='scoutGlobalParT_prob_'))
+            self.out.fillBranch(prefix + "scoutGloParT_HbqVsQCD", convert_prob(closestFatJet, ['Xbc','Xbs'], ['QCD'], prefix='scoutGlobalParT_prob_'))
+            self.out.fillBranch(prefix + "scoutGloParT_HcsVsQCD", convert_prob(closestFatJet, ['Xcs'], ['QCD'], prefix='scoutGlobalParT_prob_'))
+            self.out.fillBranch(prefix + "scoutGloParT_HbbVsHcc", convert_prob(closestFatJet, ['Xbb'], ['Xcc'], prefix='scoutGlobalParT_prob_'))
+
         # b-jet selection: select events where there is at least one b-tagged jet
         # relatively close to the selected muon.
         # note: preliminary; to find out which scores and threshold to use for 2024 scouting.
         bjets = [j for j in event.ak4jets if abs(deltaPhi(j, event.mu)) < 2
-                 #and j.particleNet_prob_b > self.scouting_ak4_PNet_WP_M
-                 #and j.particleNet_prob_b < 0.24
+                 and j.closestak8_scoutGlobalParT_prob_Xbb > self.scouting_ak4_PNet_WP_M 
                 ]
         if len(bjets) == 0: return False
 
         # select the b-jet with the highest b-tagging score close to the muon
-        bscores = [j.particleNet_prob_b for j in bjets]
+        bscores = [j.closestak8_scoutGlobalParT_prob_Xbb for j in bjets]
         maxindex = bscores.index(max(bscores))
         event.bjet = bjets[maxindex]
 
