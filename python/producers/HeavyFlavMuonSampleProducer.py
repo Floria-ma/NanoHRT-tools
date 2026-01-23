@@ -56,7 +56,8 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         event._allMuons = Collection(event, "ScoutingMuonVtx")
         event.muons = [mu for mu in event._allMuons
                        if mu.pt > 55 and abs(mu.eta) < 2.4
-                       #and abs(mu.trk_dxy) < 0.4 and abs(mu.trk_dz) < 1.0
+                       and abs(mu.trk_dxy) < 0.15
+                       #and abs(mu.trk_dz) < 1.0
                        and mu.trackIso < 0.1
                       ]
         if len(event.muons) != 1: return False
@@ -83,6 +84,7 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         # note: preliminary; to find out which scores and threshold to use for 2024 scouting.
         bjets = [j for j in event.ak4jets if abs(deltaPhi(j, event.mu)) < 2
                  #and j.particleNet_prob_b > self.scouting_ak4_PNet_WP_M
+                 #and j.particleNet_prob_b < 0.24
                 ]
         if len(bjets) == 0: return False
 
