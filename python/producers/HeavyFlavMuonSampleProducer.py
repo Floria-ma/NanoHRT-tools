@@ -47,15 +47,17 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
 
         # closest fat jet to the b-jet scores
         prefix = "bjet_closestFatJet_"
-        self.out.branch(prefix + "scoutGloParT_Xbb", "F")
-        self.out.branch(prefix + "scoutGloParT_Xbc", "F")
-        self.out.branch(prefix + "scoutGloParT_Xbs", "F")
-        self.out.branch(prefix + "scoutGloParT_HbbVsQCD", "F")
-        self.out.branch(prefix + "scoutGloParT_HbqVsQCD",  "F")
-        self.out.branch(prefix + "scoutGloParT_HcsVsQCD",  "F")
+        self.out.branch("n_bjets", "I")
+        self.out.branch(prefix + "scoutGloParT_Xbb", "F", lenVar="n_bjets")
+        self.out.branch(prefix + "scoutGloParT_Xbc", "F", lenVar="n_bjets")
+        self.out.branch(prefix + "scoutGloParT_Xbs", "F", lenVar="n_bjets")
+        self.out.branch(prefix + "scoutGloParT_HbbVsQCD", "F", lenVar="n_bjets")
+        self.out.branch(prefix + "scoutGloParT_HbqVsQCD",  "F", lenVar="n_bjets")
+        self.out.branch(prefix + "scoutGloParT_HcsVsQCD",  "F", lenVar="n_bjets")
         self.out.branch(prefix + "scoutGloParT_HbbVsHcc", "F")
-        #self.out.branch(prefix + "hadronFlavour", "F")
-        #self.out.branch(prefix + "ScoutingPFJetRecluster_genJetIdx", "F")
+        self.out.branch(prefix + "hadronFlavour",  "I", lenVar="n_bjets")
+        self.out.branch(prefix + "ScoutingPFJetRecluster_genJetIdx", "I", lenVar="n_bjets")
+        self.out.branch(prefix + "ak4_ak8_dR", "F")
 
     def analyze(self, event):
 
@@ -100,9 +102,9 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
 
         # Fatjet truth info 
         # enable branches explicitly
-        event._tree.SetBranchStatus("nFatJet", 1)
-        event._tree.SetBranchStatus("FatJet_*", 1)
-        genjets = Collection(event, "FatJet") 
+        #event._tree.SetBranchStatus("nGenJet", 1)
+        #event._tree.SetBranchStatus("GenJet_*", 1)
+        genjets = Collection(event, "GenJet") 
 
         for j in event.ak4jets:
             prefix = "bjet_closestFatJet_"
@@ -110,29 +112,23 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
             j.closestFatJet = fj
             j.closestFatJet_dr = dr
 
-            # find the hadron flavour of the closest fatjet
-            #bestfatjet, dR = closest(fj, genjets)
-            #flavor = bestfatjet.hadronFlavour if (bestfatjet and dR < 0.8) else -1
-            #self.out.fillBranch(prefix + "hadronFlavour", flavor)
+            genjetIdx = getattr(j, "genJetIdx", -1)
+            # find the hadron flavour of the closest genjet
+            if genjetIdx is not None and genjetIdx < len(genjets) and genjetIdx >= 0:
+                genjet = genjets[genjetIdx]
+                j.flavor = getattr(genjet, "hadronFlavour", -1)
+            else:
+                j.flavor = -1
 
-            if fj and dr < 0.8:
+            #if fj and dr < 0.8:
                 # define the scouting ParT b tagging scores for the closest fatjet
-                j.closestak8_scoutGlobalParT_prob_Xbb = fj.scoutGlobalParT_prob_Xbb if fj else -1
-                j.closestak8_scoutGlobalParT_prob_Xbc = fj.scoutGlobalParT_prob_Xbc if fj else -1
-                j.closestak8_scoutGlobalParT_prob_Xbs = fj.scoutGlobalParT_prob_Xbs if fj else -1
-                j.closestak8_scoutGlobalParT_HbbVsQCD = convert_prob(fj, ['Xbb'], ['QCD'], prefix='scoutGlobalParT_prob_') if fj else -1
-                j.closestak8_scoutGlobalParT_HbqVsQCD = convert_prob(fj, ['Xbc','Xbs'], ['QCD'], prefix='scoutGlobalParT_prob_') if fj else -1
-                j.closestak8_scoutGlobalParT_HcsVsQCD = convert_prob(fj, ['Xcs'], ['QCD'], prefix='scoutGlobalParT_prob_') if fj else -1
-                # fill also in the output tree for the closest fatjet
-                self.out.fillBranch(prefix + "scoutGloParT_Xbb", getattr(fj, "scoutGlobalParT_prob_Xbb", -1))
-                self.out.fillBranch(prefix + "scoutGloParT_Xbc", getattr(fj, "scoutGlobalParT_prob_Xbc", -1))
-                self.out.fillBranch(prefix + "scoutGloParT_Xbs", getattr(fj, "scoutGlobalParT_prob_Xbs", -1))
-                self.out.fillBranch(prefix + "scoutGloParT_HbbVsQCD", convert_prob(fj, ['Xbb'], ['QCD'], prefix='scoutGlobalParT_prob_'))
-                self.out.fillBranch(prefix + "scoutGloParT_HbqVsQCD", convert_prob(fj, ['Xbc','Xbs'], ['QCD'], prefix='scoutGlobalParT_prob_'))
-                self.out.fillBranch(prefix + "scoutGloParT_HcsVsQCD", convert_prob(fj, ['Xcs'], ['QCD'], prefix='scoutGlobalParT_prob_'))
-                self.out.fillBranch(prefix + "scoutGloParT_HbbVsHcc", convert_prob(fj, ['Xbb'], ['Xcc'], prefix='scoutGlobalParT_prob_'))
-                #self.out.fillBranch(prefix + "FatJet_hadronFlavour", getattr(fj, "hadronFlavour", -1))
-                #self.out.fillBranch(prefix + "ScoutingPFJetRecluster_genJetIdx", getattr(j, "genJetIdx", -1))
+            j.closestak8_scoutGlobalParT_prob_Xbb = fj.scoutGlobalParT_prob_Xbb if fj else -1
+            j.closestak8_scoutGlobalParT_prob_Xbc = fj.scoutGlobalParT_prob_Xbc if fj else -1
+            j.closestak8_scoutGlobalParT_prob_Xbs = fj.scoutGlobalParT_prob_Xbs if fj else -1
+            j.closestak8_scoutGlobalParT_HbbVsQCD = convert_prob(fj, ['Xbb'], ['QCD'], prefix='scoutGlobalParT_prob_') if fj else -1
+            j.closestak8_scoutGlobalParT_HbqVsQCD = convert_prob(fj, ['Xbc','Xbs'], ['QCD'], prefix='scoutGlobalParT_prob_') if fj else -1
+            j.closestak8_scoutGlobalParT_HcsVsQCD = convert_prob(fj, ['Xcs'], ['QCD'], prefix='scoutGlobalParT_prob_') if fj else -1
+            j.closestak8_scoutGlobalParT_HbbVsHcc = convert_prob(fj, ['Xbb'], ['Xcc'], prefix='scoutGlobalParT_prob_') if fj else -1
 
         # b-jet selection: select events where there is at least one b-tagged jet
         # relatively close to the selected muon.
@@ -140,10 +136,43 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         bjets = [j for j in event.ak4jets if abs(deltaPhi(j, event.mu)) < 2
                  and j.closestFatJet is not None
                  and j.closestFatJet_dr < 0.8
-                 and j.closestak8_scoutGlobalParT_HbqVsQCD > self.scouting_ak4_PNet_WP_M 
+                 #and j.closestak8_scoutGlobalParT_HbqVsQCD > self.scouting_ak4_PNet_WP_M 
                 ]
         if len(bjets) == 0: return False
 
+        HbqvsQCD = []
+        flavors = []
+        Xbb = []
+        Xbc = []
+        Xbs = []
+        HbbvsQCD = []
+        HcsvsQCD = []
+        genidx = []
+
+        # fill bjet closest fatjet scores
+        prefix = "bjet_closestFatJet_"  
+        for j in bjets:
+            HbqvsQCD.append(j.closestak8_scoutGlobalParT_HbqVsQCD)
+            Xbb.append(j.closestak8_scoutGlobalParT_prob_Xbb)
+            Xbc.append(j.closestak8_scoutGlobalParT_prob_Xbc)
+            Xbs.append(j.closestak8_scoutGlobalParT_prob_Xbs)
+            HbbvsQCD.append(j.closestak8_scoutGlobalParT_HbbVsQCD)
+            HcsvsQCD.append(j.closestak8_scoutGlobalParT_HcsVsQCD)
+            flavors.append(j.flavor)
+            genidx.append(getattr(j, "genJetIdx", -1))
+            #flavor = j.flavor
+        self.out.fillBranch("n_bjets", len(HbqvsQCD))
+            #self.out.fillBranch(prefix + "ak4_ak8_dR", j.closestFatJet_dr)
+        self.out.fillBranch(prefix + "hadronFlavour", flavors)
+        self.out.fillBranch(prefix + "ScoutingPFJetRecluster_genJetIdx", genidx)
+        self.out.fillBranch(prefix + "scoutGloParT_Xbb", Xbb)
+        self.out.fillBranch(prefix + "scoutGloParT_Xbc", Xbc)
+        self.out.fillBranch(prefix + "scoutGloParT_Xbs", Xbs)
+        self.out.fillBranch(prefix + "scoutGloParT_HbbVsQCD", HbbvsQCD)
+        self.out.fillBranch(prefix + "scoutGloParT_HbqVsQCD", HbqvsQCD)
+        self.out.fillBranch(prefix + "scoutGloParT_HcsVsQCD", HcsvsQCD)
+            #self.out.fillBranch(prefix + "scoutGloParT_HbbVsHcc", j.closestak8_scoutGlobalParT_HbbVsHcc)
+        
         # select the b-jet with the highest b-tagging score close to the muon
         bscores = [j.closestak8_scoutGlobalParT_HbqVsQCD for j in bjets]
         maxindex = bscores.index(max(bscores))
