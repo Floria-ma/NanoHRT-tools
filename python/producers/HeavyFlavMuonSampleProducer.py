@@ -54,10 +54,10 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         self.out.branch(prefix + "scoutGloParT_HbbVsQCD", "F", lenVar="n_bjets")
         self.out.branch(prefix + "scoutGloParT_HbqVsQCD",  "F", lenVar="n_bjets")
         self.out.branch(prefix + "scoutGloParT_HcsVsQCD",  "F", lenVar="n_bjets")
-        self.out.branch(prefix + "scoutGloParT_HbbVsHcc", "F")
+        self.out.branch(prefix + "scoutGloParT_HbbVsHcc", "F", lenVar="n_bjets")
         self.out.branch(prefix + "hadronFlavour",  "I", lenVar="n_bjets")
         self.out.branch(prefix + "ScoutingPFJetRecluster_genJetIdx", "I", lenVar="n_bjets")
-        self.out.branch(prefix + "ak4_ak8_dR", "F")
+        self.out.branch(prefix + "ak4_ak8_dR", "F", lenVar="n_bjets")
 
     def analyze(self, event):
 
@@ -148,6 +148,8 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         HbbvsQCD = []
         HcsvsQCD = []
         genidx = []
+        dR = []
+        HbbvsHcc = []
 
         # fill bjet closest fatjet scores
         prefix = "bjet_closestFatJet_"  
@@ -160,9 +162,10 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
             HcsvsQCD.append(j.closestak8_scoutGlobalParT_HcsVsQCD)
             flavors.append(j.flavor)
             genidx.append(getattr(j, "genJetIdx", -1))
+            dR.append(j.closestFatJet_dr)
+            HbbvsHcc.append(j.closestak8_scoutGlobalParT_HbbVsHcc)
             #flavor = j.flavor
         self.out.fillBranch("n_bjets", len(HbqvsQCD))
-            #self.out.fillBranch(prefix + "ak4_ak8_dR", j.closestFatJet_dr)
         self.out.fillBranch(prefix + "hadronFlavour", flavors)
         self.out.fillBranch(prefix + "ScoutingPFJetRecluster_genJetIdx", genidx)
         self.out.fillBranch(prefix + "scoutGloParT_Xbb", Xbb)
@@ -171,7 +174,8 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         self.out.fillBranch(prefix + "scoutGloParT_HbbVsQCD", HbbvsQCD)
         self.out.fillBranch(prefix + "scoutGloParT_HbqVsQCD", HbqvsQCD)
         self.out.fillBranch(prefix + "scoutGloParT_HcsVsQCD", HcsvsQCD)
-            #self.out.fillBranch(prefix + "scoutGloParT_HbbVsHcc", j.closestak8_scoutGlobalParT_HbbVsHcc)
+        self.out.fillBranch(prefix + "scoutGloParT_HbbVsHcc", HbbvsHcc)
+        self.out.fillBranch(prefix + "ak4_ak8_dR", dR)
         
         # select the b-jet with the highest b-tagging score close to the muon
         bscores = [j.closestak8_scoutGlobalParT_HbqVsQCD for j in bjets]
