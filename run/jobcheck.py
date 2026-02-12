@@ -93,7 +93,8 @@ def check_error_content(filename, contentlist='default', verbose=True):
                            'hadd exiting due to error in',
                            'Bus error',
                            'Exception:',
-                           'Traceback (most recent call last):' ])
+                           'Traceback (most recent call last):',
+                           '*** Break *** segmentation violation'])
         contentlist.append('###error###') # custom error tag for targeted flagging
 
     # check if the file content contains provided error tags
