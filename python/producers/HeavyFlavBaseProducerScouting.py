@@ -287,7 +287,11 @@ class HeavyFlavBaseProducerScouting(Module, object):
                 fj.is_qualified = True
             event._allFatJets = sorted(event._allFatJets, key=lambda x: x.pt, reverse=True)
         except Exception: pass
-        
+
+        # limit number of jets to avoid excessive loops
+        event._allJets    = event._allJets[:300]
+        event._allFatJets = event._allFatJets[:50]
+
         # select jets
         if self._doJetCleaning:
             event.ak4jets = [
@@ -390,11 +394,8 @@ class HeavyFlavBaseProducerScouting(Module, object):
         #ak8_2 = fatjets[1] if len(fatjets) > 1 else None
 
         # build genparts with dauIdx
-        try:
-            genparts = event.genparts
-        except RuntimeError:
-            genparts = Collection(event, "GenPart")
-            for idx, gp in enumerate(genparts):
+        genparts = Collection(event, "GenPart")
+        for idx, gp in enumerate(genparts):
                 if "dauIdx" not in gp.__dict__:
                     gp.dauIdx = []
                 if gp.genPartIdxMother >= 0:
@@ -403,7 +404,7 @@ class HeavyFlavBaseProducerScouting(Module, object):
                         mom.dauIdx = [idx]
                     else:
                         mom.dauIdx.append(idx)
-            event.genparts = genparts
+            #event.genparts = genparts
 
         def isHadronic(gp):
             return any(abs(genparts[i].pdgId) < 6 for i in getattr(gp, "dauIdx", []))

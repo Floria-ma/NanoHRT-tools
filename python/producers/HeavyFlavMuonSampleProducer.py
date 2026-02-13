@@ -51,6 +51,7 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         self.out.branch(prefix + "scoutGloParT_Xbb", "F", lenVar="n_bjets")
         self.out.branch(prefix + "scoutGloParT_Xbc", "F", lenVar="n_bjets")
         self.out.branch(prefix + "scoutGloParT_Xbs", "F", lenVar="n_bjets")
+        self.out.branch(prefix + "scoutGloParT_QCD", "F", lenVar="n_bjets")
         self.out.branch(prefix + "scoutGloParT_HbbVsQCD", "F", lenVar="n_bjets")
         self.out.branch(prefix + "scoutGloParT_HbqVsQCD",  "F", lenVar="n_bjets")
         self.out.branch(prefix + "scoutGloParT_HcsVsQCD",  "F", lenVar="n_bjets")
@@ -72,13 +73,17 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         #)
 
         # muon selection: select events with exactly 1 good muon, reject all others
+        # apply tight IDs
         event._allMuons = Collection(event, "ScoutingMuonVtx")
         event.muons = [mu for mu in event._allMuons
                        if mu.pt > 55 and abs(mu.eta) < 2.4
                        and abs(mu.trk_dxy) < 0.15
-                       #and abs(mu.trk_dz) < 1.0
                        and mu.trackIso < 0.1
-                      ]
+                       and mu.normchi2 < 3.0
+                       and mu.nValidRecoMuonHits > 0 
+                       and mu.nRecoMuonMatchedStations > 1
+                       and mu.nTrackerLayersWithMeasurement > 5
+                       ]
         if len(event.muons) != 1: return False
 
         # select the (unique) muon found above
@@ -89,7 +94,7 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
 
         # get jet & MET collections (no corrections in scouting)
         self.correctJetAndMET(event)
-
+       
         # MET selection
         if event.met.pt < 50: return False
 
@@ -134,6 +139,7 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
             j.closestak8_scoutGlobalParT_prob_Xbb = fj.scoutGlobalParT_prob_Xbb if fj else -1
             j.closestak8_scoutGlobalParT_prob_Xbc = fj.scoutGlobalParT_prob_Xbc if fj else -1
             j.closestak8_scoutGlobalParT_prob_Xbs = fj.scoutGlobalParT_prob_Xbs if fj else -1
+            j.closestak8_scoutGlobalParT_prob_QCD = fj.scoutGlobalParT_prob_QCD if fj else -1
             j.closestak8_scoutGlobalParT_HbbVsQCD = convert_prob(fj, ['Xbb'], ['QCD'], prefix='scoutGlobalParT_prob_') if fj else -1
             j.closestak8_scoutGlobalParT_HbqVsQCD = convert_prob(fj, ['Xbc','Xbs'], ['QCD'], prefix='scoutGlobalParT_prob_') if fj else -1
             j.closestak8_scoutGlobalParT_HbbcsVsQCD = convert_prob(fj, ['Xbb','Xbc','Xbs'], ['QCD'], prefix='scoutGlobalParT_prob_') if fj else -1
@@ -144,11 +150,14 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         # b-jet selection: select events where there is at least one b-tagged jet
         # relatively close to the selected muon.
         # note: preliminary; to find out which scores and threshold to use for 2024 scouting.
+        # not applying the fatjet matching and score selection for now
         bjets = [j for j in event.ak4jets if abs(deltaPhi(j, event.mu)) < 2
-                 and j.closestFatJet is not None
-                 and j.closestFatJet_dr < 0.8
+                 #and j.closestFatJet is not None
+                 #and j.closestFatJet_dr < 0.8
                  #and j.closestak8_scoutGlobalParT_HbbcsVsQCD > self.scouting_ak4_PNet_WP_M 
-                 and j.closestak8_scoutGlobalParT_HbbcsVsQCD > 0.3
+                 #and j.closestak8_scoutGlobalParT_HbbcsVsQCD > 0.46
+                 #and j.closestak8_scoutGlobalParT_HbbcsVsQCD < 0.7
+                 #and j.closestak8_scoutGlobalParT_HbbVsQCSD > 0.1
                 ]
         if len(bjets) == 0: return False
 
@@ -157,6 +166,7 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         Xbb = []
         Xbc = []
         Xbs = []
+        QCD = []
         HbbvsQCD = []
         HcsvsQCD = []
         HbbvsHqq = []
@@ -172,6 +182,7 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
             Xbb.append(j.closestak8_scoutGlobalParT_prob_Xbb)
             Xbc.append(j.closestak8_scoutGlobalParT_prob_Xbc)
             Xbs.append(j.closestak8_scoutGlobalParT_prob_Xbs)
+            QCD.append(j.closestak8_scoutGlobalParT_prob_QCD)
             HbbvsQCD.append(j.closestak8_scoutGlobalParT_HbbVsQCD)
             HcsvsQCD.append(j.closestak8_scoutGlobalParT_HcsVsQCD)
             HbbvsHqq.append(j.closestak8_scoutGlobalParT_HbbVsHqq)
@@ -185,6 +196,7 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         self.out.fillBranch(prefix + "scoutGloParT_Xbb", Xbb)
         self.out.fillBranch(prefix + "scoutGloParT_Xbc", Xbc)
         self.out.fillBranch(prefix + "scoutGloParT_Xbs", Xbs)
+        self.out.fillBranch(prefix + "scoutGloParT_QCD", QCD)
         self.out.fillBranch(prefix + "scoutGloParT_HbbVsQCD", HbbvsQCD)
         self.out.fillBranch(prefix + "scoutGloParT_HbqVsQCD", HbqvsQCD)
         self.out.fillBranch(prefix + "scoutGloParT_HcsVsQCD", HcsvsQCD)
@@ -197,7 +209,8 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
             self.out.fillBranch(prefix + "hadronFlavour", flavors) 
         
         # select the b-jet with the highest b-tagging score close to the muon
-        bscores = [j.closestak8_scoutGlobalParT_HbbcsVsQCD for j in bjets]
+        # bscores = [j.closestak8_scoutGlobalParT_HbbcsVsQCD for j in bjets]
+        bscores = [j.particleNet_prob_b for j in bjets]
         maxindex = bscores.index(max(bscores))
         event.bjet = bjets[maxindex]
 
