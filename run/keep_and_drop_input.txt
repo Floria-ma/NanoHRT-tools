@@ -25,6 +25,10 @@ keep ScoutingMuonVtx_charge
 keep ScoutingMuonVtx_trk_dxy
 keep ScoutingMuonVtx_trk_dz
 keep ScoutingMuonVtx_trackIso
+keep ScoutingMuonVtx_normchi2
+keep ScoutingMuonVtx_nValidRecoMuonHits
+keep ScoutingMuonVtx_nRecoMuonMatchedStations
+keep ScoutingMuonVtx_nTrackerLayersWithMeasurement
 
 # MET
 dropmatch n?CaloMET_.+

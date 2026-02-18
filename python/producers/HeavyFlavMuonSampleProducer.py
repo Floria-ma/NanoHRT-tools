@@ -30,6 +30,10 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         self.out.branch("muon_trk_dxy", "F")
         self.out.branch("muon_trk_dz", "F")
         self.out.branch("muon_trackIso", "F")
+        self.out.branch("muon_normchi2", "F")
+        self.out.branch("muon_nValidRecoMuonHits", "I")
+        self.out.branch("muon_nRecoMuonMatchedStations", "I")
+        self.out.branch("muon_nTrackerLayersWithMeasurement", "I")
 
         # Leptonic W
         self.out.branch("leptonicW_pt", "F")
@@ -58,6 +62,9 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         self.out.branch(prefix + "scoutGloParT_HbbVsHqq", "F", lenVar="n_bjets")
         self.out.branch(prefix + "scoutGloParT_HbbcsVsQCD", "F", lenVar="n_bjets")
         self.out.branch(prefix + "hadronFlavour",  "I", lenVar="n_bjets")
+        self.out.branch(prefix + "HbbVsQCD_for_cut", "F")
+        self.out.branch(prefix + "HbbcsVsQCD_for_cut", "F")
+
         if self.isMC:
             self.out.branch(prefix + "ScoutingPFJetRecluster_genJetIdx", "I", lenVar="n_bjets")
         self.out.branch(prefix + "ak4_ak8_dR", "F", lenVar="n_bjets")
@@ -78,6 +85,10 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
                        and abs(mu.trk_dxy) < 0.15
                        #and abs(mu.trk_dz) < 1.0
                        and mu.trackIso < 0.1
+                       #and mu.normchi2 < 3.0
+                       #and mu.nValidRecoMuonHits > 0 
+                       #and mu.nRecoMuonMatchedStations > 1
+                       #and mu.nTrackerLayersWithMeasurement > 5
                       ]
         if len(event.muons) != 1: return False
 
@@ -148,7 +159,7 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
                  and j.closestFatJet is not None
                  and j.closestFatJet_dr < 0.8
                  #and j.closestak8_scoutGlobalParT_HbbcsVsQCD > self.scouting_ak4_PNet_WP_M 
-                 and j.closestak8_scoutGlobalParT_HbbcsVsQCD > 0.3
+                 #and j.closestak8_scoutGlobalParT_HbbcsVsQCD > 0.3
                 ]
         if len(bjets) == 0: return False
 
@@ -197,7 +208,7 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
             self.out.fillBranch(prefix + "hadronFlavour", flavors) 
         
         # select the b-jet with the highest b-tagging score close to the muon
-        bscores = [j.closestak8_scoutGlobalParT_HbbcsVsQCD for j in bjets]
+        bscores = [j.closestak8_scoutGlobalParT_HbbVsQCD for j in bjets]
         maxindex = bscores.index(max(bscores))
         event.bjet = bjets[maxindex]
 
@@ -223,6 +234,10 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         self.out.fillBranch("muon_trk_dxy", event.mu.trk_dxy)
         self.out.fillBranch("muon_trk_dz", event.mu.trk_dz)
         self.out.fillBranch("muon_trackIso", event.mu.trackIso)
+        self.out.fillBranch("muon_normchi2", event.mu.normchi2)
+        self.out.fillBranch("muon_nValidRecoMuonHits", event.mu.nValidRecoMuonHits)
+        self.out.fillBranch("muon_nRecoMuonMatchedStations", event.mu.nRecoMuonMatchedStations)
+        self.out.fillBranch("muon_nTrackerLayersWithMeasurement", event.mu.nTrackerLayersWithMeasurement)
         self.out.fillBranch("leptonicW_pt", event.leptonicW.Pt())
         self.out.fillBranch("bjet_pt", event.bjet.pt)
         self.out.fillBranch("bjet_eta", event.bjet.eta)
@@ -233,6 +248,8 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         self.out.fillBranch("bjet_particleNet_prob_cc", event.bjet.particleNet_prob_cc)
         self.out.fillBranch("bjet_particleNet_prob_uds", event.bjet.particleNet_prob_uds)
         self.out.fillBranch("bjet_particleNet_prob_g", event.bjet.particleNet_prob_g)
+        self.out.fillBranch("bjet_closestFatJet_HbbVsQCD_for_cut", event.bjet.closestak8_scoutGlobalParT_HbbVsQCD)
+        self.out.fillBranch("bjet_closestFatJet_HbbcsVsQCD_for_cut", event.bjet.closestak8_scoutGlobalParT_HbbcsVsQCD)
 
         return True
 
