@@ -1,4 +1,5 @@
 import logging
+import numpy as np
 from PhysicsTools.NanoAODTools.postprocessing.framework.datamodel import Collection
 from ..helpers.utils import deltaPhi, polarP4, configLogger
 from ..helpers.triggerHelper import passTrigger
@@ -22,6 +23,10 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
 
         # Trigger information
         self.out.branch("passMuTrig", "O")
+
+        # Delta Phi between jets and MET
+        self.out.branch("n_ak4jets", "I")
+        self.out.branch("deltaPhi_jets_met", "F", lenVar="n_ak4jets")
 
         # Muon variables
         self.out.branch("muon_pt", "F")
@@ -80,15 +85,29 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
 
         # muon selection: select events with exactly 1 good muon, reject all others
         event._allMuons = Collection(event, "ScoutingMuonVtx")
+        event.primaryVertices = Collection(event, "ScoutingPrimaryVertex")
+        def compute_tk_dxy_dz(mu):
+            pvs = event.primaryVertices
+            px = mu.pt * np.cos(mu.phi) 
+            py = mu.pt * np.sin(mu.phi) 
+            pz = mu.pt * np.sinh(mu.eta) 
+            pt2 = mu.pt**2 
+            dx = mu.trk_vx - pvs[0].x 
+            dy = mu.trk_vy - pvs[0].y 
+            dz = mu.trk_vz - pvs[0].z 
+            tk_dxyPV = abs((-dx*py+dy*px)/mu.pt) if pt2 > 0 else 9999
+            tk_dzPV = abs(dz - (dx*px+dy*py)*pz/pt2) if pt2 > 0 else 9999
+            return tk_dxyPV, tk_dzPV
+
         event.muons = [mu for mu in event._allMuons
-                       if mu.pt > 55 and abs(mu.eta) < 2.4
-                       and abs(mu.trk_dxy) < 0.15
-                       #and abs(mu.trk_dz) < 1.0
-                       and mu.trackIso < 0.1
-                       #and mu.normchi2 < 3.0
-                       #and mu.nValidRecoMuonHits > 0 
-                       #and mu.nRecoMuonMatchedStations > 1
-                       #and mu.nTrackerLayersWithMeasurement > 5
+                       if mu.pt > 30 and abs(mu.eta) < 2.4
+                       and compute_tk_dxy_dz(mu)[0] < 0.2
+                       and compute_tk_dxy_dz(mu)[1] < 0.5
+                       and mu.trackIso < 0.005
+                       and mu.normchi2 < 3.0
+                       and mu.nValidRecoMuonHits > 0 
+                       and mu.nRecoMuonMatchedStations > 1
+                       and mu.nTrackerLayersWithMeasurement > 5
                       ]
         if len(event.muons) != 1: return False
 
@@ -102,7 +121,7 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         self.correctJetAndMET(event)
 
         # MET selection
-        if event.met.pt < 50: return False
+        if event.met.pt < 50: return False      
 
         # leptonic W pt selection
         event.mu._mass = 0.1057
@@ -122,7 +141,13 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         else:
             genjets = None
         
+        event.ak4jets = sorted(event.ak4jets, key=lambda j: j.pt, reverse=True)
+        DeltaPhi_jets_met = []
         for j in event.ak4jets:
+            # compute DeltaPhi between jets and MET
+            DeltaPhi = abs(deltaPhi(j.phi, event.met.phi))
+            DeltaPhi_jets_met.append(DeltaPhi)
+            
             prefix = "bjet_closestFatJet_"
             fj, dr = closest(j, allFatJetsSelected)
             j.closestFatJet = fj
@@ -151,6 +176,9 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
             j.closestak8_scoutGlobalParT_HcsVsQCD = convert_prob(fj, ['Xcs'], ['QCD'], prefix='scoutGlobalParT_prob_') if fj else -1
             j.closestak8_scoutGlobalParT_HbbVsHcc = convert_prob(fj, ['Xbb'], ['Xcc'], prefix='scoutGlobalParT_prob_') if fj else -1
             j.closestak8_scoutGlobalParT_HbbVsHqq = convert_prob(fj, ['Xbb'], ['Xqq'], prefix='scoutGlobalParT_prob_') if fj else -1
+
+        self.out.fillBranch("n_ak4jets", len(event.ak4jets))
+        self.out.fillBranch("deltaPhi_jets_met", DeltaPhi_jets_met)
 
         # b-jet selection: select events where there is at least one b-tagged jet
         # relatively close to the selected muon.
@@ -191,7 +219,7 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
             genidx.append(j.genJetIdx)
             dR.append(j.closestFatJet_dr)
             HbbvsHcc.append(j.closestak8_scoutGlobalParT_HbbVsHcc)
-  
+
         self.out.fillBranch("n_bjets", len(HbqvsQCD))
         self.out.fillBranch(prefix + "scoutGloParT_Xbb", Xbb)
         self.out.fillBranch(prefix + "scoutGloParT_Xbc", Xbc)

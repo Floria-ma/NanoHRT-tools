@@ -3,4 +3,5 @@
 # and reads the centrally produced NanoAODs (i.e. via DAS).
 
 singlemu:
-- /ScoutingPFRun3/Run2024C-ScoutNano-v1/NANOAOD
+- [/ScoutingPFRun3/Run2024I-ScoutNano-v1/NANOAOD,]
+  #/ScoutingPFRun3/Run2024F-ScoutNano-v1/NANOAOD]

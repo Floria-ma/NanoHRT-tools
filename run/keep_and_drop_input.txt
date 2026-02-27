@@ -8,6 +8,7 @@ dropmatch n?SubGenJetAK8_.+
 drop Jet_*
 drop ScoutingPFJet_* # use only the reclustered collection
 keep ScoutingPFJetRecluster_* # use only this one
+keep nScoutingPrimaryVertex
 
 # Electron
 drop ScoutingElectron*
@@ -22,7 +23,7 @@ keep ScoutingMuonVtx_pt
 keep ScoutingMuonVtx_eta
 keep ScoutingMuonVtx_phi
 keep ScoutingMuonVtx_charge
-keep ScoutingMuonVtx_trk_dxy
+keep ScoutingMuonVtx_trk_*
 keep ScoutingMuonVtx_trk_dz
 keep ScoutingMuonVtx_trackIso
 keep ScoutingMuonVtx_normchi2
@@ -45,7 +46,7 @@ dropmatch n?FsrPhoton_.+
 dropmatch n?IsoTrack_.+
 dropmatch n?btagWeight_.+
 dropmatch n?ScoutingPhoton_.+
-dropmatch n?ScoutingPrimaryVertex_.+
+#dropmatch n?ScoutingPrimaryVertex_.+
 
 # HLT
 drop HLT*

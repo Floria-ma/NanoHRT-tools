@@ -308,12 +308,16 @@ class HeavyFlavBaseProducerScouting(Module, object):
                 fj for fj in event._allFatJets
                 if fj.pt > 200
                 and abs(fj.eta) < 2.4
+                and fj.msoftdrop > 30 
+                and fj.msoftdrop < 200
                 and closest(fj, getattr(event, "looseLeptons", []))[1] >= self._jetConeSize
             ]
         else:
             event.fatjets = [
                 fj for fj in event._allFatJets
                 if fj.pt > 200 and abs(fj.eta) < 2.4
+                and fj.msoftdrop > 30 
+                and fj.msoftdrop < 200
             ]
 
         # HT = scalar sum of selected AK4 jet pT
