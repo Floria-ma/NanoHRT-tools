@@ -24,3 +24,7 @@ keep genWeight
 keep LHE_Vpt
 keep PSWeight
 #keep jetVetoMapEventVeto
+keep genTtbarId
+# PDF/Scale weights
+keep *LHE*Weight
+keep *PSWeight

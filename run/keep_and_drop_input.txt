@@ -71,3 +71,14 @@ dropmatch n?Generator_.+
 dropmatch n?LHEReweightingWeight
 dropmatch n?HTXS_.+
 dropmatch n?GenIsolatedPhoton_.+
+
+#event info
+keep PV_npvs
+
+# genweight
+keep genWeight
+keep LHE_Vpt
+#keep genTtbarId
+# PDF/Scale weights
+keep *LHE*Weight
+keep *PSWeight
