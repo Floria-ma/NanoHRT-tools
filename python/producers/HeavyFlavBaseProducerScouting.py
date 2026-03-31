@@ -10,7 +10,10 @@ from PhysicsTools.NanoAODTools.postprocessing.framework.eventloop import Module
 
 from ..helpers.nnHelper import convert_prob, ensemble
 from ..helpers.jetmetCorrector import JetMETCorrector, rndSeed
+from .puWeightProducer import PileupWeightProducer
 from ..helpers.triggerHelper import passTrigger
+from .nloWeightProducer import NLOWeightProducer
+from .leptonSFProducer import TriggerSFProducer
 from ..helpers.utils import deltaR, closest, polarP4, configLogger, deltaR2, deltaPhi
 
 logger = logging.getLogger("nano")
@@ -55,7 +58,7 @@ class HeavyFlavBaseProducerScouting(Module, object):
         self.year = int(kwargs["year"])
         # note: for now, this is only meant for 2024 samples
         self.jetType = kwargs.get("jetType", "scouting").lower()
-        self._jmeSysts = {'jec': False,
+        self._jmeSysts = {'jec': True,
                           'jes': None,
                           'jes_source': '',
                           'jes_uncertainty_file_prefix': '',
@@ -63,9 +66,8 @@ class HeavyFlavBaseProducerScouting(Module, object):
                           'jmr': None,
                           'met_unclustered': None,
                           'smearMET': True,
-                          'applyHEMUnc': False,
-                          'jesr_extra_br': True}
-        
+                          'applyHEMUnc': False}
+
         #self._opts = {
         #    "WRITE_CACHE_FILE": False,
         #    'mass_range': (40, 250),
@@ -73,7 +75,7 @@ class HeavyFlavBaseProducerScouting(Module, object):
         self._opts = {'sfbdt_threshold': -99,
                       'run_tagger': False, 'tagger_versions': ['V02b', 'V02c', 'V02d'],
                       'run_mass_regression': False, 'mass_regression_versions': ['V01a', 'V01b', 'V01c'],
-                      'WRITE_CACHE_FILE': False}
+                      'WRITE_CACHE_FILE': False, 'runModules': True, 'fillSystWeights': False}
 
         for k in kwargs:
             if k in self._jmeSysts:
@@ -86,6 +88,12 @@ class HeavyFlavBaseProducerScouting(Module, object):
                                   self._jmeSysts['met_unclustered'], self._jmeSysts['applyHEMUnc']])
         #logger.info('Running %s channel for year %s with JME systematics %s, other options %s',
         #            self._channel, str(self._year), str(self._jmeSysts), str(self._opts))
+
+        if self._needsJMECorr:
+           self.jetmetCorr = JetMETCorrector(year=self.year, jetType="AK4PFHLT", **self._jmeSysts)
+           self.fatjetCorr = JetMETCorrector(year=self.year, jetType="AK4PFHLT", **self._jmeSysts)
+           self.subjetCorr = JetMETCorrector(year=self.year, jetType="AK4PFHLT", **self._jmeSysts)
+
 
         self._doJetCleaning = True
 
@@ -100,16 +108,45 @@ class HeavyFlavBaseProducerScouting(Module, object):
             "HeavyFlavBaseProducerScouting: channel=%s, year=%s, ak4=%s, fatjets=%s",
             self._channel, self.year, self._ak4_name, self._fatjet_name
         )
-
+        #self._fj_gen_name = 'GenJetAK8'
+        #self._sj_gen_name = 'SubGenJetAK8'
         # set b-tagging working points (for scouting ak4 ParticleNet)
         # note: this is preliminary; to find out which scores and which thresholds to use exactly!
         self.scouting_ak4_PNet_WP_M = {
             2024: 0.1919
         }[self.year]
 
+        self._modules = {
+            # 'flavTagSF': FlavTagSFProducer,
+            # 'electronSF': ElectronSFProducer,
+            # 'muonSF': MuonSFProducer,
+            'puWeight': PileupWeightProducer,
+            'nloWeight': NLOWeightProducer,
+            #'eventJetVeto': EventVetoMapProducer,
+            # 'topSystReweighter': TopSystReweightingProducer,
+        } if self._opts['runModules'] else {}
+        print("\n\n\n\n\n self._modules",self._modules)
+        for k, cls in self._modules.items():
+            logger.info('Initializing module %s with year %s and options %s', k, self.year, str(self._opts))
+            self._modules[k] = cls(self.year, fillSystWeights=self._opts['fillSystWeights'])
+
+
     def beginJob(self):
-        # nothing heavy to initialize for scouting
+        #self._needsJMECorr = True
+        if self._needsJMECorr:
+            self.jetmetCorr.beginJob()
+            self.fatjetCorr.beginJob()
+            #self.subjetCorr.beginJob()
+        for mod in self._modules.values():
+            mod.beginJob()
         pass
+
+    def endJob(self):
+        #if self._needsJMECorr:
+        #    self.jetmetCorr.endJob()
+        #    self.fatjetCorr.endJob()
+        for mod in self._modules.values():
+            mod.endJob()
 
     def beginFile(self, inputFile, outputFile, inputTree, wrappedOutputTree):
         # MC or data
@@ -218,8 +255,12 @@ class HeavyFlavBaseProducerScouting(Module, object):
                 #self.out.branch(prefix + "W_pt", "F")
                 self.out.branch(prefix + "W_decay", "I")
 
+        for mod in self._modules.values():
+            mod.beginFile(inputFile, outputFile, inputTree, wrappedOutputTree)
+
     def endFile(self, inputFile, outputFile, inputTree, wrappedOutputTree):
-        # nothing to clean up
+        for mod in self._modules.values():
+            mod.endFile(inputFile, outputFile, inputTree, wrappedOutputTree)
         pass
 
     def selectLeptons(self, event):
@@ -243,38 +284,93 @@ class HeavyFlavBaseProducerScouting(Module, object):
 
         # sort by pt
         event.looseLeptons.sort(key=lambda x: x.pt, reverse=True)
-    
+    '''
+    def _attach_offline_info(self, target_jets, reference_jets, attrs, max_dr=0.1, label="jet"):
+        for tj in target_jets:
+            rj, dr = closest(tj, reference_jets) if len(reference_jets) else (None, 999.)
+
+            setattr(tj, f"matchedOffline{label}", rj)
+            setattr(tj, f"matchedOffline{label}_dr", dr)
+
+            if rj is not None and dr < max_dr:
+                for attr, default in attrs:
+                    try:
+                        setattr(tj, attr, getattr(rj, attr))
+                    except (RuntimeError, AttributeError):
+                        setattr(tj, attr, default)
+            else:
+                for attr, default in attrs:
+                    setattr(tj, attr, default)
+    '''
     def correctJetAndMET(self, event):
-        # initialize jets and MET
-       
-        # scoutingPFJetRecluster
-        try:
-            event._allJets = Collection(event, self._ak4_name)
-        except RuntimeError:
-            logger.error(f"{self._ak4_name} collection not found in event")
-            event._allJets = []
+        if self._needsJMECorr:
+            rho = getattr(event, self.rho_branch_name)
+            # correct AK4 jets and MET
+            self.jetmetCorr.setSeed(rndSeed(event, event._allJets))
+            self.jetmetCorr.correctJetAndMET(
+                jets=event._allJets,
+                lowPtJets=Collection(event, "CorrT1METJet"),
+                met=event.met,
+                rawMET=METObject(event, "ScoutingMET"),
+                defaultMET=METObject(event, "ScoutingMET"),
+                rho=rho, genjets=Collection(event, 'GenJet') if self.isMC else None,
+                isMC=self.isMC, runNumber=event.run)
+            event._allJets = sorted(event._allJets, key=lambda x: x.pt, reverse=True)  # sort by pt after updating
+            # correct ak8 fatjets
+            self.fatjetCorr.setSeed(rndSeed(event, event._allFatJets))
+            self.fatjetCorr.correctJetAndMET(jets=event._allFatJets, met=None, rho=rho,
+                                             genjets=Collection(event, 'GenJetAK8') if self.isMC else None,
+                                             isMC=self.isMC, runNumber=event.run)
 
-        # scoutingFatPFJetRecluster
-        try:
-            event._allFatJets = Collection(event, self._fatjet_name)
-        except RuntimeError:
-            logger.error(f"{self._fatjet_name} collection not found in event")
-            event._allFatJets = []
+        '''
+        event._offlineJets = Collection(event, "Jet")
+        event._offlineFatJets = Collection(event, "FatJet")
 
-        # MET
-        try:
-            event.met = METObject(event, "ScoutingMET")
-        except RuntimeError:
-            class _DummyMET:
-                pt = 0.0
-                phi = 0.0
+        ak4_attrs = [
+            ("rawFactor", 0.0),
+            ("muonSubtrFactor", 0.0),
+            ("area", 0.0),
+            ("neEmEF", 0.0),
+            ("chEmEF", 0.0),
+            ("jetId", 0),   
+        ]
 
-                def p4(self):
-                    return polarP4(self, eta=None, mass=None)
+        ak8_attrs = [
+            ("rawFactor", 0.0),
+            ("area", 0.0),
+            ("neEmEF", 0.0),
+            ("chEmEF", 0.0),
+            ("jetId", 0),
+        ]
+        
+        if self._needsJMECorr:
+            self._attach_offline_info(event._allJets, event._offlineJets, ak4_attrs, max_dr=0.1)
+            self._attach_offline_info(event._allFatJets, event._offlineFatJets, ak8_attrs, max_dr=0.15)
+            rho = getattr(event, self.rho_branch_name) if self.rho_branch_name else 0.0
+            #rho = event.fixedGridRhoFastjetAll
+            # correct AK4 jets and MET
+            self.jetmetCorr.setSeed(rndSeed(event, event._allJets))
+            self.jetmetCorr.correctJetAndMET(
+                jets=event._allJets,
+                lowPtJets=Collection(event, "CorrT1METJet"),
+                met=event.met,
+                rawMET=METObject(event, "ScoutingMET"),
+                defaultMET=METObject(event, "ScoutingMET"),
+                rho=rho, genjets=Collection(event, 'GenJet') if self.isMC else None,
+                isMC=self.isMC, runNumber=event.run)
+            event._allJets = sorted(event._allJets, key=lambda x: x.pt, reverse=True)  # sort by pt after updating
 
-            logger.error("ScoutingMET not found in event, using dummy MET instead.")
-            event.met = _DummyMET()
-
+            # correct fatjets
+            self.fatjetCorr.setSeed(rndSeed(event, event._allFatJets))
+            self.fatjetCorr.correctJetAndMET(jets=event._allFatJets, met=None, rho=rho,
+                                             genjets=Collection(event, 'GenJetAK8') if self.isMC else None,
+                                             isMC=self.isMC, runNumber=event.run)
+            # correct subjets
+            #self.subjetCorr.setSeed(rndSeed(event, event.subjets))
+            #self.subjetCorr.correctJetAndMET(jets=event.subjets, met=None, rho=rho,
+            #                                 genjets=Collection(event, self._sj_gen_name) if self.isMC else None,
+            #                                 isMC=self.isMC, runNumber=event.run)
+        '''
         # sort jets by pt
         try:
             event._allJets = sorted(event._allJets, key=lambda x: x.pt, reverse=True)

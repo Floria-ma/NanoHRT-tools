@@ -279,6 +279,10 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         self.out.fillBranch("bjet_closestFatJet_HbbVsQCD_for_cut", event.bjet.closestak8_scoutGlobalParT_HbbVsQCD)
         self.out.fillBranch("bjet_closestFatJet_HbbcsVsQCD_for_cut", event.bjet.closestak8_scoutGlobalParT_HbbcsVsQCD)
 
+        for mod in self._modules.values():
+            if not mod.analyze(event):
+                return False
+
         return True
 
 def MuonTree_2016(): return MuonSampleProducerScouting(year=2016)

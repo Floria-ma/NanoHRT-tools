@@ -17,7 +17,7 @@ default_config = {
     'tagger_threshold_cc': None,
     'use_nn_'
     'mass_range': None,
-    'jec': False, 'jes': None, 'jes_source': '', 'jes_uncertainty_file_prefix': 'RegroupedV2_',
+    'jec': True, 'jes': None, 'jes_source': '', 'jes_uncertainty_file_prefix': 'RegroupedV2_',
     'jer': 'nominal', 'jmr': None, 'met_unclustered': None, 'applyHEMUnc': False,
     'smearMET': False,
     'runModules': True,
@@ -128,8 +128,8 @@ def _process(args):
         PUyear = 2016
     elif year == 2021:
         PUyear = 2022
-    #elif year == 2024:
-    #    PUyear = 2024
+    elif year == 2024:
+        PUyear = 2024
     else:
         PUyear = year
 

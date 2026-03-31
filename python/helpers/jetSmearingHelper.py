@@ -61,10 +61,13 @@ class jetSmearer(object):
     def beginJob(self):
         # read jet energy resolution (JER) and JER scale factors and uncertainties
         # get latest version from: https://twiki.cern.ch/twiki/bin/view/CMS/JetResolution
-        self.jerInputFilePath = tempfile.mkdtemp()
-        find_and_extract_tarball(self.jerTag, self.jerInputFilePath)
-        self.jerInputFile = os.path.join(self.jerInputFilePath, '%s_PtResolution_%s.txt' % (self.jerTag, self.jetType))
-        self.jerUncertaintyInputFile = os.path.join(self.jerInputFilePath, '%s_SF_%s.txt' % (self.jerTag, self.jetType))
+        if self.jerTag is not None:
+            self.jerInputFilePath = tempfile.mkdtemp()
+            find_and_extract_tarball(self.jerTag, self.jerInputFilePath)
+            self.jerInputFile = os.path.join(self.jerInputFilePath, '%s_PtResolution_%s.txt' % (self.jerTag, self.jetType))
+            self.jerUncertaintyInputFile = os.path.join(self.jerInputFilePath, '%s_SF_%s.txt' % (self.jerTag, self.jetType))
+        else:
+            print('No JER tag provided, jet smearing will not be applied!')
 
         self.params_sf_and_uncertainty = ROOT.PyJetParametersWrapper()
         self.params_resolution = ROOT.PyJetParametersWrapper()
@@ -81,10 +84,15 @@ class jetSmearer(object):
 
         # initialize JER scale factors and uncertainties
         # (cf. PhysicsTools/PatUtils/interface/SmearedJetProducerT.h )
-        print("Loading jet energy resolutions (JER) from file '%s'" % self.jerInputFile)
-        self.jer = ROOT.PyJetResolutionWrapper(self.jerInputFile)
-        print("Loading JER scale factors and uncertainties from file '%s'" % self.jerUncertaintyInputFile)
-        self.jerSF_and_Uncertainty = ROOT.PyJetResolutionScaleFactorWrapper(self.jerUncertaintyInputFile)
+        if self.jerTag is not None:
+            print("Loading jet energy resolutions (JER) from file '%s'" % self.jerInputFile)
+            self.jer = ROOT.PyJetResolutionWrapper(self.jerInputFile)
+            print("Loading JER scale factors and uncertainties from file '%s'" % self.jerUncertaintyInputFile)
+            self.jerSF_and_Uncertainty = ROOT.PyJetResolutionScaleFactorWrapper(self.jerUncertaintyInputFile)
+        else:
+            self.jer = None
+            self.jerSF_and_Uncertainty = None
+            print("No JER tag provided, jet smearing will not be applied!")
 
     def endJob(self):
         shutil.rmtree(self.jerInputFilePath)
@@ -118,14 +126,20 @@ class jetSmearer(object):
         self.params_resolution.setJetPt(jet.pt)
         self.params_resolution.setJetEta(jet.eta)
         self.params_resolution.setRho(rho)
-        jet_pt_resolution = self.jer.getResolution(self.params_resolution)
+        if self.jer is not None:
+            jet_pt_resolution = self.jer.getResolution(self.params_resolution)
+        else:
+            jet_pt_resolution = 1.0
 
         jet_pt_sf_and_uncertainty = {}
         for enum_central_or_shift in [enum_nominal, enum_shift_up, enum_shift_down]:
             self.params_sf_and_uncertainty.setJetEta(jet.eta)
             self.params_sf_and_uncertainty.setJetPt(jet.pt)
-            jet_pt_sf_and_uncertainty[enum_central_or_shift] = self.jerSF_and_Uncertainty.getScaleFactor(
-                self.params_sf_and_uncertainty, enum_central_or_shift)
+            if self.jerSF_and_Uncertainty is not None:
+                jet_pt_sf_and_uncertainty[enum_central_or_shift] = self.jerSF_and_Uncertainty.getScaleFactor(
+                    self.params_sf_and_uncertainty, enum_central_or_shift)
+            else:
+                jet_pt_sf_and_uncertainty[enum_central_or_shift] = 1.0
 
         matched_genjet = match(jet, genjets, jet_pt_resolution * jet.pt, dr2cut=self.match_r2)
 

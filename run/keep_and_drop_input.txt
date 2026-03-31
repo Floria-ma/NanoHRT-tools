@@ -1,11 +1,10 @@
 # AK8 jets
 dropmatch n?FatJet_.+
-dropmatch n?GenJetAK8_.+
+#dropmatch n?GenJetAK8_.+
 dropmatch n?SubJet_.+
 dropmatch n?SubGenJetAK8_.+
 
 # AK4 jets
-drop Jet_*
 drop ScoutingPFJet_* # use only the reclustered collection
 keep ScoutingPFJetRecluster_* # use only this one
 keep nScoutingPrimaryVertex
