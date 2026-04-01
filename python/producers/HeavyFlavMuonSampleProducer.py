@@ -6,7 +6,7 @@ from ..helpers.triggerHelper import passTrigger
 from ..helpers.utils import deltaR, closest
 from ..helpers.nnHelper import convert_prob
 
-from .HeavyFlavBaseProducerScouting import HeavyFlavBaseProducerScouting
+from .HeavyFlavBaseProducerScouting import HeavyFlavBaseProducerScouting, METObject
 
 logger = logging.getLogger("nano")
 configLogger("nano", loglevel=logging.INFO)
@@ -84,6 +84,9 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         #)
 
         # muon selection: select events with exactly 1 good muon, reject all others
+        event._allJets = Collection(event, self._ak4_name)
+        event._allFatJets = Collection(event, self._fatjet_name)
+        event.met = METObject(event, "ScoutingMET")
         event._allMuons = Collection(event, "ScoutingMuonVtx")
         event.primaryVertices = Collection(event, "ScoutingPrimaryVertex")
         def compute_tk_dxy_dz(mu):
