@@ -12,6 +12,7 @@ import tempfile
 import logging
 logging.basicConfig(level=logging.DEBUG, format='[%(asctime)s] %(levelname)s: %(message)s')
 
+_cmssw_tarball_ready = False
 
 def get_chunks(l, n):
     """Yield successive n-sized chunks from l."""
@@ -569,6 +570,13 @@ def run_add_weight(args):
         return
     if not os.path.exists(parts_dir):
         os.makedirs(parts_dir)
+    if args.use_tmpdir:
+        tmpdir = os.environ.get('TMPDIR', os.path.expandvars('/tmp/$USER'))
+        tmp_parts_dir = os.path.join(tmpdir, os.path.basename(args.outputdir.split('/')[-2])+'/'+os.path.basename(args.outputdir.split('/')[-1]), 'parts')
+        logging.info('Using tmpdir %s for merging.' % tmp_parts_dir)
+        if not os.path.exists(tmp_parts_dir):
+            os.makedirs(tmp_parts_dir)
+
     for samp in md['samples']:
         outfile = '{parts_dir}/{samp}_tree.root'.format(parts_dir=parts_dir, samp=samp)
         cmd = 'haddnano.py {outfile} {outputdir}/pieces/{samp}_*_tree.root'.format(outfile=outfile, outputdir=args.outputdir, samp=samp)

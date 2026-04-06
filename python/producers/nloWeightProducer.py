@@ -21,27 +21,27 @@ class NLOWeightProducer(Module, object):
                                  'SignalWeight_nloEWK_up_rebin', 'SignalWeight_nloEWK_down_rebin']
 
         self._fWpH = os.path.expandvars(
-            '$CMSSW_BASE/src/PhysicsTools/NanoTrees/data/gen/Wp_nloEWK_weight_unnormalized.root')
+            '$CMSSW_BASE/src/PhysicsTools/NanoHRTTools/data/gen/Wp_nloEWK_weight_unnormalized.root')
         self._hWpH = None
         self._normfactor_WpH = (474233.6 / 435142.8, 474233.6 / 436091.1, 474233.6 / 434194.5)
 
         self._fWmH = os.path.expandvars(
-            '$CMSSW_BASE/src/PhysicsTools/NanoTrees/data/gen/Wm_nloEWK_weight_unnormalized.root')
+            '$CMSSW_BASE/src/PhysicsTools/NanoHRTTools/data/gen/Wm_nloEWK_weight_unnormalized.root')
         self._hWmH = None
         self._normfactor_WmH = (256350.0 / 236154.8, 256350.0 / 236568.9, 256350.0 / 235740.6)
 
         self._fZllH = os.path.expandvars(
-            '$CMSSW_BASE/src/PhysicsTools/NanoTrees/data/gen/Zll_nloEWK_weight_unnormalized.root')
+            '$CMSSW_BASE/src/PhysicsTools/NanoHRTTools/data/gen/Zll_nloEWK_weight_unnormalized.root')
         self._hZllH = None
         # self._normfactor_ZllH = (367873.6 / 334293.4, 335519.0 / 335519.0, 335519.0 / 333067.7)
         self._normfactor_ZllH = (367873.6 / 334293.4, 367873.6 / 335519.0, 367873.6 / 333067.7)
 
         self._fZnnH = os.path.expandvars(
-            '$CMSSW_BASE/src/PhysicsTools/NanoTrees/data/gen/Znn_nloEWK_weight_unnormalized.root')
+            '$CMSSW_BASE/src/PhysicsTools/NanoHRTTools/data/gen/Znn_nloEWK_weight_unnormalized.root')
         self._hZnnH = None
         self._normfactor_ZnnH = (225368.7 / 215478.1, 225368.7 / 215612.1, 225368.7 / 215344.1)
 
-        self._fVV = os.path.expandvars('$CMSSW_BASE/src/PhysicsTools/NanoTrees/data/gen/vv_nnlo_wgt.root')
+        self._fVV = os.path.expandvars('$CMSSW_BASE/src/PhysicsTools/NanoHRTTools/data/gen/vv_nnlo_wgt.root')
         self._hWW = None
         self._hWZ = None
         self._hZZ = None

@@ -162,7 +162,7 @@ class JetMETCorrector(object):
         elif self.year == 2024:
             self.globalTag = 'Winter24_V1_MC'
             self.jerTag = None#'Winter24_JRV1_MC'
-            self.dataTags = ((0,'Winter24_V1_MC'),
+            self.dataTags = ((379412,'Winter24_V1_MC'),
             )
             #For the Scouting data we can apply the same corrections for MC and data
             #     # set the name of the tarball with a dummy run number
@@ -266,7 +266,7 @@ class JetMETCorrector(object):
                          rho=None, genjets=[], isMC=True, runNumber=None):
         # for MET correction, use 'Jet' (corr_pt>15) and 'CorrT1METJet' (corr_pt<15) collections
         # Type-1 MET correction: https://github.com/cms-sw/cmssw/blob/master/JetMETCorrections/Type1MET/interface/PFJetMETcorrInputProducerT.h
-        if met is None:
+        if met is None or lowPtJets is None:
             lowPtJets = []
         else:
             for j in lowPtJets:

@@ -309,7 +309,8 @@ class HeavyFlavBaseProducerScouting(Module, object):
             self.jetmetCorr.setSeed(rndSeed(event, event._allJets))
             self.jetmetCorr.correctJetAndMET(
                 jets=event._allJets,
-                lowPtJets=Collection(event, "CorrT1METJet"),
+                #lowPtJets=Collection(event, "CorrT1METJet"),
+                lowPtJets=None,
                 met=event.met,
                 rawMET=METObject(event, "ScoutingMET"),
                 defaultMET=METObject(event, "ScoutingMET"),
