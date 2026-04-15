@@ -15,7 +15,7 @@ default_config = {
     'tagger_threshold_twoprong': None,
     'tagger_threshold_bb': None,
     'tagger_threshold_cc': None,
-    'use_nn_'
+    'use_nn_classifier': False,
     'mass_range': None,
     'jec': True, 'jes': None, 'jes_source': '', 'jes_uncertainty_file_prefix': 'RegroupedV2_',
     'jer': 'nominal', 'jmr': None, 'met_unclustered': None, 'applyHEMUnc': False,

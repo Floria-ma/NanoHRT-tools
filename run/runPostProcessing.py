@@ -570,7 +570,7 @@ def run_add_weight(args):
         return
     if not os.path.exists(parts_dir):
         os.makedirs(parts_dir)
-    if args.use_tmpdir:
+    if getattr(args, "use_tmpdir", False):
         tmpdir = os.environ.get('TMPDIR', os.path.expandvars('/tmp/$USER'))
         tmp_parts_dir = os.path.join(tmpdir, os.path.basename(args.outputdir.split('/')[-2])+'/'+os.path.basename(args.outputdir.split('/')[-1]), 'parts')
         logging.info('Using tmpdir %s for merging.' % tmp_parts_dir)
@@ -578,6 +578,12 @@ def run_add_weight(args):
             os.makedirs(tmp_parts_dir)
 
     for samp in md['samples']:
+        if samp == 'WZtoLNu2Q_TuneCP5_13p6TeV_powheg-pythia8':
+            logging.warning('Skipping problematic sample %s', samp)
+            continue
+        #if samp == 'Wto2Q-3Jets_Bin-HT-400to800_TuneCP5_13p6TeV_madgraphMLM-pythia8':
+        #    logging.warning('Skipping problematic sample %s', samp)
+        #    continue
         outfile = '{parts_dir}/{samp}_tree.root'.format(parts_dir=parts_dir, samp=samp)
         cmd = 'haddnano.py {outfile} {outputdir}/pieces/{samp}_*_tree.root'.format(outfile=outfile, outputdir=args.outputdir, samp=samp)
         logging.debug('...' + cmd)
