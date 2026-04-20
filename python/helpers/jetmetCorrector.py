@@ -106,7 +106,7 @@ class JetMETCorrector(object):
         self.jer = jer
         self.jmr = jmr
         self.met_unclustered = met_unclustered
-        self.correctMET = (jetType == 'AK4PFchs' or jetType == 'AK4PFPuppi' or jetType == 'AK4PFHLT')  # FIXME
+        self.correctMET = (jetType == 'AK4PFchs' or jetType == 'AK4PFPuppi' or jetType == 'AK4PFHLT' or jetType == 'AK8PFHLT')  # FIXME
         self.smearMET = smearMET
         self.applyHEMUnc = applyHEMUnc
 
@@ -160,9 +160,9 @@ class JetMETCorrector(object):
                 (320394, 'Summer19UL18_RunD_V5_DATA'),
             )
         elif self.year == 2024:
-            self.globalTag = 'Winter24_V1_MC'
+            self.globalTag = 'Winter24HLT_V1_MC'
             self.jerTag = None#'Winter24_JRV1_MC'
-            self.dataTags = ((379412,'Winter24_V1_MC'),
+            self.dataTags = ((379412,'Winter24HLT_V1_MC'),
             )
             #For the Scouting data we can apply the same corrections for MC and data
             #     # set the name of the tarball with a dummy run number

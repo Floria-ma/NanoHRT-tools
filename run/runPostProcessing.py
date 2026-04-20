@@ -578,9 +578,9 @@ def run_add_weight(args):
             os.makedirs(tmp_parts_dir)
 
     for samp in md['samples']:
-        if samp == 'WZtoLNu2Q_TuneCP5_13p6TeV_powheg-pythia8':
-            logging.warning('Skipping problematic sample %s', samp)
-            continue
+        #if samp == 'WZtoLNu2Q_TuneCP5_13p6TeV_powheg-pythia8':
+        #    logging.warning('Skipping problematic sample %s', samp)
+        #    continue
         #if samp == 'Wto2Q-3Jets_Bin-HT-400to800_TuneCP5_13p6TeV_madgraphMLM-pythia8':
         #    logging.warning('Skipping problematic sample %s', samp)
         #    continue

@@ -91,7 +91,7 @@ class HeavyFlavBaseProducerScouting(Module, object):
 
         if self._needsJMECorr:
            self.jetmetCorr = JetMETCorrector(year=self.year, jetType="AK4PFHLT", **self._jmeSysts)
-           self.fatjetCorr = JetMETCorrector(year=self.year, jetType="AK4PFHLT", **self._jmeSysts)
+           self.fatjetCorr = JetMETCorrector(year=self.year, jetType="AK8PFHLT", **self._jmeSysts)
            self.subjetCorr = JetMETCorrector(year=self.year, jetType="AK4PFHLT", **self._jmeSysts)
 
 
