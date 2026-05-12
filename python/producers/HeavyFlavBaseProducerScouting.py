@@ -75,7 +75,7 @@ class HeavyFlavBaseProducerScouting(Module, object):
         self._opts = {'sfbdt_threshold': -99,
                       'run_tagger': False, 'tagger_versions': ['V02b', 'V02c', 'V02d'],
                       'run_mass_regression': False, 'mass_regression_versions': ['V01a', 'V01b', 'V01c'],
-                      'WRITE_CACHE_FILE': False, 'runModules': True, 'fillSystWeights': False}
+                      'WRITE_CACHE_FILE': False, 'runModules': True, 'fillSystWeights': True}
 
         for k in kwargs:
             if k in self._jmeSysts:

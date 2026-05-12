@@ -182,7 +182,7 @@ class JetMETCorrector(object):
 
     def beginJob(self):
         # set up JEC
-        if self.jec or self.jes in ['up', 'down'] or self.correctMET:
+        if self.jec or self.jes in ['up', 'down'] or self.correctMET or self.jesr_extra_br:
             for library in ["libCondFormatsJetMETObjects", "libPhysicsToolsNanoAODTools"]:
                 if library not in ROOT.gSystem.GetLibraries():
                     logger.info("Load Library '%s'" % library.replace("lib", ""))
@@ -192,6 +192,7 @@ class JetMETCorrector(object):
             # extract the MC and unc files
             find_and_extract_tarball(self.globalTag, self.jesInputFilePath,
                                      copy_txt_with_prefix=self.jes_uncertainty_file_prefix)
+
             # updating JEC/re-correct MET
             self.jetCorrectorMC = JetCorrector(globalTag=self.globalTag,
                                                jetType=self.jetType,
@@ -200,30 +201,25 @@ class JetMETCorrector(object):
             self.jetCorrectorsDATA = {}
             for iov, tag in self.dataTags:
                 find_and_extract_tarball(tag, self.jesInputFilePath)
-                #if iov > 0:
-                self.jetCorrectorsDATA[tag] = JetCorrector(globalTag=tag,
+                if iov > 0:
+                    self.jetCorrectorsDATA[tag] = JetCorrector(globalTag=tag,
                                                                jetType=self.jetType,
                                                                jecPath=self.jesInputFilePath,
-                                                               applyResidual=False if iov == 0 else True)
+                                                               applyResidual=True)
 
         # JES uncertainty
-        if self.jes in ['up', 'down']:
+        if self.jes in ['up', 'down'] or self.jesr_extra_br:
             if not self.jes_source:
                 # total unc.
                 self.jesUncertaintyInputFileName = self.globalTag + "_Uncertainty_" + self.jetType + ".txt"
             else:
                 # unc. by source
                 self.jesUncertaintyInputFileName = self.jes_uncertainty_file_prefix + self.globalTag + "_UncertaintySources_" + self.jetType + ".txt"
-                #self.jesUncertaintyInputFileName = self.jes_uncertainty_file_prefix + self.globalTag + "_UncertaintySources_" + "AK4PFchs" + ".txt"
 
             pars = ROOT.JetCorrectorParameters(
                 os.path.join(self.jesInputFilePath, self.jesUncertaintyInputFileName),
                 self.jes_source)
             self.jesUncertainty = ROOT.JetCorrectionUncertainty(pars)
-        
-        print("JEC dir:", self.jesInputFilePath)
-        print("Files:", sorted(os.listdir(self.jesInputFilePath))[:50])
-
 
         # set up JER
         self.jetSmearer = None
