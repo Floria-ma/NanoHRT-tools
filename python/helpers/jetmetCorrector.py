@@ -4,6 +4,7 @@ import shutil
 import itertools
 import logging
 import numpy as np
+from pprint import pprint
 import ROOT
 ROOT.PyConfig.IgnoreCommandLineOptions = True
 
@@ -33,25 +34,39 @@ def _sf(vals, syst='nominal'):
 
 
 class JetCorrector(object):
+    '''
+    Simple jet corrector class.
+    Used as helper object in the more extensive JetMETCorrector class below.
+    This class parses a conventional JEC txt file and applies corrections to individual jets.
+    '''
 
     def __init__(self, globalTag, jetType, jecPath, applyResidual=True):
-        self.jecLevels = ['L2Relative', 'L3Absolute'] if 'Puppi' in jetType else [
-            'L1FastJet', 'L2Relative', 'L3Absolute']
-        if applyResidual:
-            self.jecLevels += ['L2L3Residual']
+        
+        # determine which levels of correction should be applied
+        self.jecLevels = ['L1FastJet', 'L2Relative', 'L3Absolute']
+        if 'Puppi' in jetType: ['L2Relative', 'L3Absolute']
+        if applyResidual: self.jecLevels += ['L2L3Residual']
+
+        # initialize the ROOT object holding the corrections
         self.vPar = ROOT.vector(ROOT.JetCorrectorParameters)()
         logger.info('Init JetCorrector: %s, %s, %s', globalTag, jetType, str(self.jecLevels))
+
+        # set the correct file for each level
         for level in self.jecLevels:
-            self.vPar.push_back(ROOT.JetCorrectorParameters(os.path.join(
-                jecPath, "%s_%s_%s.txt" % (globalTag, level, jetType)), ""))
+            jecFile = os.path.join(jecPath, f"{globalTag}_{level}_{jetType}.txt")
+            print(f'  - Using JEC file {jecFile}. (exists? -> {os.path.exists(jecFile)})')
+            self.vPar.push_back(ROOT.JetCorrectorParameters(jecFile, ""))
         
-        for level in self.jecLevels:
-            fname = os.path.join(jecPath, f"{globalTag}_{level}_{jetType}.txt")
-        print("Trying JEC file:", fname, "exists?", os.path.exists(fname))
-        
+        # make the corrector 
         self.corrector = ROOT.FactorizedJetCorrector(self.vPar)
+        print('  Init JetCorrector done.')
+
 
     def getCorrection(self, jet, rho, level=None):
+        '''
+        Get the correction for a single jet
+        '''
+
         try:
             raw_pt = jet.rawP4.pt()
         except RuntimeError:
@@ -97,6 +112,7 @@ class JetMETCorrector(object):
             - 'up', 'down': up/down variation of the unclustered energy
         '''
 
+        # initializations
         self.year = year
         self.jetType = jetType
         self.jec = jec
@@ -109,8 +125,11 @@ class JetMETCorrector(object):
         self.correctMET = (jetType == 'AK4PFchs' or jetType == 'AK4PFPuppi' or jetType == 'AK4PFHLT' or jetType == 'AK8PFHLT')  # FIXME
         self.smearMET = smearMET
         self.applyHEMUnc = applyHEMUnc
-
         self.excludeJetsForMET = None
+
+        # printout for debugging
+        logger.info('Initialized JetMETCorrector with the following properties:')
+        pprint(vars(self))
 
         # set up tags for each year
         if self.year == 2015:
@@ -161,54 +180,51 @@ class JetMETCorrector(object):
             )
         elif self.year == 2024:
             self.globalTag = 'Winter24HLT_V1_MC'
-            self.jerTag = None#'Winter24_JRV1_MC'
-            self.dataTags = ((379412,'Winter24HLT_V1_MC'),
+            self.jerTag = None # 'Winter24_JRV1_MC'
+            self.dataTags = (
+                (379412, 'Winter24HLT_V1_MC'),
             )
-            #For the Scouting data we can apply the same corrections for MC and data
-            #     # set the name of the tarball with a dummy run number
-            #     (0, 'Winter24_V1_DATA'),
-            #     # (start run number (inclusive), 'tag name')
-            #     (379412, 'Winter24_RunC_V1_DATA'),
-            #     (380258, 'Winter24_RunD_V1_DATA'),
-            #     (380949, 'Winter24_RunE_V1_DATA'),
-            #     (381944, 'Winter24_RunF_V1_DATA'),
-            #     (383792, 'Winter24_RunG_V1_DATA'),
-            #     (385819, 'Winter24_RunH_V1_DATA'),
-            #     (386409, 'Winter24_RunI_V1_DATA'),
-            #     (387203, 'Winter24_RunJ_V1_DATA'),
-            # )
+            # note: for the scouting data we can apply the same corrections for MC and data!
         else:
             raise RuntimeError('Invalid year: %s' % (str(self.year)))
 
     def beginJob(self):
-        # set up JEC
-        if self.jec or self.jes in ['up', 'down'] or self.correctMET or self.jesr_extra_br:
+        '''
+        Initialize the correctors
+        '''
+
+        # set up nominal JEC if needed
+        if self.jec or self.jes in ['up', 'down'] or self.correctMET:
+
+            # load extra libraries if not yet done so
             for library in ["libCondFormatsJetMETObjects", "libPhysicsToolsNanoAODTools"]:
                 if library not in ROOT.gSystem.GetLibraries():
                     logger.info("Load Library '%s'" % library.replace("lib", ""))
                     ROOT.gSystem.Load(library)
 
+            # initialize the corrector for MC
+            logger.info("Initializing JetCorrector for JEC in MC...")
             self.jesInputFilePath = tempfile.mkdtemp()
-            # extract the MC and unc files
             find_and_extract_tarball(self.globalTag, self.jesInputFilePath,
                                      copy_txt_with_prefix=self.jes_uncertainty_file_prefix)
-
-            # updating JEC/re-correct MET
             self.jetCorrectorMC = JetCorrector(globalTag=self.globalTag,
                                                jetType=self.jetType,
                                                jecPath=self.jesInputFilePath,
                                                applyResidual=False)
+
+            # initialize the corrector(s) for data
+            logger.info("Initializing JetCorrector(s) for JEC in data...")
             self.jetCorrectorsDATA = {}
             for iov, tag in self.dataTags:
                 find_and_extract_tarball(tag, self.jesInputFilePath)
-                if iov > 0:
-                    self.jetCorrectorsDATA[tag] = JetCorrector(globalTag=tag,
-                                                               jetType=self.jetType,
-                                                               jecPath=self.jesInputFilePath,
-                                                               applyResidual=True)
+                if iov <= 0: continue
+                self.jetCorrectorsDATA[tag] = JetCorrector(globalTag=tag,
+                                                            jetType=self.jetType,
+                                                            jecPath=self.jesInputFilePath,
+                                                            applyResidual=True)
 
-        # JES uncertainty
-        if self.jes in ['up', 'down'] or self.jesr_extra_br:
+        # set up JES uncertainty if needed
+        if self.jes in ['up', 'down']:
             if not self.jes_source:
                 # total unc.
                 self.jesUncertaintyInputFileName = self.globalTag + "_Uncertainty_" + self.jetType + ".txt"

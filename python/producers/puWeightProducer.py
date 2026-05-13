@@ -25,7 +25,7 @@ class PileupWeightProducer(Module, object):
             correction_file = f'/cvmfs/cms.cern.ch/rsync/cms-nanoAOD/jsonpog-integration/POG/LUM/{self.era}/puWeights.json.gz'
             self.corr = correctionlib.CorrectionSet.from_file(correction_file)[key_dict[self.year]]
         else:
-            correction_file = f'/afs/cern.ch/user/z/zima/temp/CMSSW_15_0_6/src/PhysicsTools/NanoHRTTools/python/helpers/data/puWeights2024.json.gz'
+            correction_file = os.path.join(os.path.dirname(__file__), '../helpers/data/puWeights2024.json.gz')
             self.corr = correctionlib.CorrectionSet.from_file(correction_file)[key_dict[self.year]]
         self._opts = {
             'fillSystWeights': True,

@@ -2,6 +2,7 @@ import os
 import logging
 import numpy as np
 import itertools
+from pprint import pprint
 import ROOT
 ROOT.PyConfig.IgnoreCommandLineOptions = True
 
@@ -58,6 +59,9 @@ class HeavyFlavBaseProducerScouting(Module, object):
         self.year = int(kwargs["year"])
         # note: for now, this is only meant for 2024 samples
         self.jetType = kwargs.get("jetType", "scouting").lower()
+
+        # initialize default JEC/JER settings
+        # (can be overwritten by kwargs later!)
         self._jmeSysts = {'jec': True,
                           'jes': None,
                           'jes_source': '',
@@ -68,32 +72,29 @@ class HeavyFlavBaseProducerScouting(Module, object):
                           'smearMET': True,
                           'applyHEMUnc': False}
 
-        #self._opts = {
-        #    "WRITE_CACHE_FILE": False,
-        #    'mass_range': (40, 250),
-        #}
         self._opts = {'sfbdt_threshold': -99,
                       'run_tagger': False, 'tagger_versions': ['V02b', 'V02c', 'V02d'],
                       'run_mass_regression': False, 'mass_regression_versions': ['V01a', 'V01b', 'V01c'],
                       'WRITE_CACHE_FILE': False, 'runModules': True, 'fillSystWeights': True}
 
+        # update _opts and _jmeSysts with kwargs
         for k in kwargs:
-            if k in self._jmeSysts:
-                self._jmeSysts[k] = kwargs[k]
-            else:
-                self._opts[k] = kwargs[k]
+            if k in self._jmeSysts: self._jmeSysts[k] = kwargs[k]
+            else: self._opts[k] = kwargs[k]
 
+        # printouts for debugging
+        logger.info('Initialized HeavyFlavBaseProducerScouting with the following settings:')
+        pprint(vars(self))
+
+        # determine whether any kind of JEC/JER correction is needed,
+        # and if so, initialize the correctors
         self._needsJMECorr = any([self._jmeSysts['jec'], self._jmeSysts['jes'],
                                   self._jmeSysts['jer'], self._jmeSysts['jmr'],
                                   self._jmeSysts['met_unclustered'], self._jmeSysts['applyHEMUnc']])
-        #logger.info('Running %s channel for year %s with JME systematics %s, other options %s',
-        #            self._channel, str(self._year), str(self._jmeSysts), str(self._opts))
-
         if self._needsJMECorr:
            self.jetmetCorr = JetMETCorrector(year=self.year, jetType="AK4PFHLT", **self._jmeSysts)
            self.fatjetCorr = JetMETCorrector(year=self.year, jetType="AK8PFHLT", **self._jmeSysts)
            self.subjetCorr = JetMETCorrector(year=self.year, jetType="AK4PFHLT", **self._jmeSysts)
-
 
         self._doJetCleaning = True
 
@@ -132,7 +133,6 @@ class HeavyFlavBaseProducerScouting(Module, object):
 
 
     def beginJob(self):
-        #self._needsJMECorr = True
         if self._needsJMECorr:
             self.jetmetCorr.beginJob()
             self.fatjetCorr.beginJob()
@@ -142,9 +142,6 @@ class HeavyFlavBaseProducerScouting(Module, object):
         pass
 
     def endJob(self):
-        #if self._needsJMECorr:
-        #    self.jetmetCorr.endJob()
-        #    self.fatjetCorr.endJob()
         for mod in self._modules.values():
             mod.endJob()
 
