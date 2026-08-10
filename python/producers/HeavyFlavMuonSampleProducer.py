@@ -4,7 +4,6 @@ from PhysicsTools.NanoAODTools.postprocessing.framework.datamodel import Collect
 from ..helpers.utils import deltaPhi, polarP4, configLogger
 from ..helpers.triggerHelper import passTrigger
 from ..helpers.utils import deltaR, closest
-from ..helpers.nnHelper import convert_prob
 
 from .HeavyFlavBaseProducerScouting import HeavyFlavBaseProducerScouting, METObject
 
@@ -28,6 +27,10 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         self.out.branch("n_ak4jets", "I")
         self.out.branch("deltaPhi_jets_met", "F", lenVar="n_ak4jets")
 
+        # Selected lepton (muon or electron) matching the ttCR region
+        self.out.branch("n_lep", "I")
+        self.out.branch("lep_pdgId", "I")
+
         # Muon variables
         self.out.branch("muon_pt", "F")
         self.out.branch("muon_eta", "F")
@@ -43,36 +46,6 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         # Leptonic W
         self.out.branch("leptonicW_pt", "F")
 
-        # B-tagged jet close to muon
-        self.out.branch("bjet_pt", "F")
-        self.out.branch("bjet_eta", "F")
-        self.out.branch("bjet_phi", "F")
-        self.out.branch("bjet_particleNet_prob_b", "F")
-        self.out.branch("bjet_particleNet_prob_bb", "F")
-        self.out.branch("bjet_particleNet_prob_c", "F")
-        self.out.branch("bjet_particleNet_prob_cc", "F")
-        self.out.branch("bjet_particleNet_prob_uds", "F")
-        self.out.branch("bjet_particleNet_prob_g", "F")
-
-        # closest fat jet to the b-jet scores
-        prefix = "bjet_closestFatJet_"
-        self.out.branch("n_bjets", "I")
-        self.out.branch(prefix + "scoutGloParT_Xbb", "F", lenVar="n_bjets")
-        self.out.branch(prefix + "scoutGloParT_Xbc", "F", lenVar="n_bjets")
-        self.out.branch(prefix + "scoutGloParT_Xbs", "F", lenVar="n_bjets")
-        self.out.branch(prefix + "scoutGloParT_HbbVsQCD", "F", lenVar="n_bjets")
-        self.out.branch(prefix + "scoutGloParT_HbqVsQCD",  "F", lenVar="n_bjets")
-        self.out.branch(prefix + "scoutGloParT_HcsVsQCD",  "F", lenVar="n_bjets")
-        self.out.branch(prefix + "scoutGloParT_HbbVsHcc", "F", lenVar="n_bjets")
-        self.out.branch(prefix + "scoutGloParT_HbbVsHqq", "F", lenVar="n_bjets")
-        self.out.branch(prefix + "scoutGloParT_HbbcsVsQCD", "F", lenVar="n_bjets")
-        self.out.branch(prefix + "hadronFlavour",  "I", lenVar="n_bjets")
-        self.out.branch(prefix + "HbbVsQCD_for_cut", "F")
-        self.out.branch(prefix + "HbbcsVsQCD_for_cut", "F")
-
-        if self.isMC:
-            self.out.branch(prefix + "ScoutingPFJetRecluster_genJetIdx", "I", lenVar="n_bjets")
-        self.out.branch(prefix + "ak4_ak8_dR", "F", lenVar="n_bjets")
 
     def analyze(self, event):
 
@@ -83,39 +56,94 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         #    flush=True
         #)
 
-        # muon selection: select events with exactly 1 good muon, reject all others
+        # muon selection: select events with at least 1 good lepton (muon or electron),
+        # matching the vhTreeProducer ttCR region.
         event._allJets = Collection(event, self._ak4_name)
         event._allFatJets = Collection(event, self._fatjet_name)
         event.met = METObject(event, "ScoutingMET")
         event._allMuons = Collection(event, "ScoutingMuonVtx")
+        event._allElectrons = Collection(event, "ScoutingElectron")
         event.primaryVertices = Collection(event, "ScoutingPrimaryVertex")
-        def compute_tk_dxy_dz(mu):
-            pvs = event.primaryVertices
-            px = mu.pt * np.cos(mu.phi) 
-            py = mu.pt * np.sin(mu.phi) 
-            pz = mu.pt * np.sinh(mu.eta) 
-            pt2 = mu.pt**2 
-            dx = mu.trk_vx - pvs[0].x 
-            dy = mu.trk_vy - pvs[0].y 
-            dz = mu.trk_vz - pvs[0].z 
-            tk_dxyPV = abs((-dx*py+dy*px)/mu.pt) if pt2 > 0 else 9999
-            tk_dzPV = abs(dz - (dx*px+dy*py)*pz/pt2) if pt2 > 0 else 9999
-            return tk_dxyPV, tk_dzPV
 
-        event.muons = [mu for mu in event._allMuons
-                       if mu.pt > 30 and abs(mu.eta) < 2.4
-                       and compute_tk_dxy_dz(mu)[0] < 0.2
-                       and compute_tk_dxy_dz(mu)[1] < 0.5
-                       and mu.trackIso < 0.005
-                       and mu.normchi2 < 3.0
-                       and mu.nValidRecoMuonHits > 0 
-                       and mu.nRecoMuonMatchedStations > 1
-                       and mu.nTrackerLayersWithMeasurement > 5
-                      ]
-        if len(event.muons) != 1: return False
+        # muon ID matching the vhTreeProducer ttCR region (lep_id_muon)
+        # dxy/dz in scouting are not relative to the PV and are corrected here:
+        # https://github.com/cms-sw/cmssw/blob/dc1c73bb9d1735dd1f3a192def64782b4e189f79/DQM/HLTEvF/plugins/ScoutingCollectionMonitor.cc#L85-L103
+        def lep_id_muon(mu, pvs):
+            # Tight ID
+            pass_normchi2 = mu.normchi2 < 3.0  # offline ID is <10 but muon scouting contact recommended 3
+            pass_nValidMuonHits = mu.nValidRecoMuonHits > 0
+            pass_nRecoMuonMatchedStations = mu.nRecoMuonMatchedStations > 1
+            pass_nTrackerLayers = mu.nTrackerLayersWithMeasurement > 5
 
-        # select the (unique) muon found above
-        event.mu = event.muons[0]
+            pv = pvs[0]
+            px = mu.pt * np.cos(mu.phi)
+            py = mu.pt * np.sin(mu.phi)
+            pz = mu.pt * np.sinh(mu.phi)
+            pt2 = mu.pt * mu.pt
+
+            dx = mu.trk_vx - pv.x
+            dy = mu.trk_vy - pv.y
+            dz = mu.trk_vz - pv.z
+
+            tk_dxyPV = abs((-dx * py + dy * px) / mu.pt)
+            tk_dzPV = abs(dz - (dx * px + dy * py) * pz / pt2)
+
+            pass_dxy = tk_dxyPV < 0.2
+            pass_dz = tk_dzPV < 0.5
+
+            pass_nValidPixelHits = mu.nValidPixelHits > 0
+            pass_nTrackerLayersWithMeasurement = mu.nTrackerLayersWithMeasurement > 5
+
+            pass_noiso = (pass_normchi2 and pass_nValidMuonHits and pass_nRecoMuonMatchedStations and
+                          pass_nTrackerLayers and pass_dxy and pass_dz) and \
+                         (pass_nValidPixelHits and pass_nTrackerLayersWithMeasurement)
+
+            pass_trackIso = (mu.trackIso / mu.pt) < 0.15
+
+            return pass_noiso and pass_trackIso
+
+        # electron ID matching the vhTreeProducer ttCR region (lep_id_wp80_electron)
+        def lep_id_wp80_electron(ele):
+            barrel = abs(ele.eta) <= 1.479
+            # WP80 ID (no isolation)
+            pass_dEta = abs(ele.dEtaIn) < (0.1207 if barrel else 0.1818)
+            pass_dPhi = abs(ele.dPhiIn) < (0.0811 if barrel else 0.1221)
+            pass_sigmaIEtaIEta = ele.sigmaIetaIeta < (0.0158 if barrel else 0.0289)
+            pass_ooEMOop = abs(ele.ooEMOop) < (0.0158 if barrel else 0.0311)
+            pass_hOverE = ele.hOverE < (0.0823 if barrel else 0.0986)
+            pass_noiso = (pass_dEta and pass_dPhi and pass_sigmaIEtaIEta and
+                          pass_ooEMOop and pass_hOverE)
+            # WP80 isolation
+            pass_trackerIso = (ele.trackIso / ele.pt) < (0.1863 if barrel else 0.0406)
+            pass_ecalIso = (ele.ecalIso / ele.pt) < (0.1779 if barrel else 0.2005)
+            pass_hcalIso = (ele.hcalIso / ele.pt) < (0.4463 if barrel else 0.1660)
+            return pass_noiso and pass_trackerIso and pass_ecalIso and pass_hcalIso
+
+        # build selected leptons (muons + electrons), each tagged with pdgId
+        event.leptons = []
+        event.leptons_pdgId = []
+        event.muons = []
+        for mu in event._allMuons:
+            if mu.pt > 20 and abs(mu.eta) < 2.4 and lep_id_muon(mu, event.primaryVertices):
+                event.muons.append(mu)
+                event.leptons.append(mu)
+                event.leptons_pdgId.append(13)
+        for el in event._allElectrons:
+            if el.pt > 20 and abs(el.eta) < 2.5 and lep_id_wp80_electron(el):
+                event.leptons.append(el)
+                event.leptons_pdgId.append(11)
+
+        # ttCR: require at least one selected lepton (muon or electron)
+        if len(event.leptons) == 0: return False
+        if len(event.muons) == 0: return False
+
+        # select the leading (highest-pt) lepton; keep its pdgId aligned
+        order = sorted(range(len(event.leptons)), key=lambda i: event.leptons[i].pt, reverse=True)
+        event.muons = [lep for lep, pid in zip(event.leptons, event.leptons_pdgId) if pid == 13]
+        event.leptons = [event.leptons[i] for i in order]
+        event.leptons_pdgId = [event.leptons_pdgId[i] for i in order]
+        event.mu = event.muons[0] #once sorted by pt, is the leading lepton still muon (? 
+        event.lep_pdgId = event.leptons_pdgId[0]
 
         # select leptons for jet cleaning
         self.selectLeptons(event)
@@ -123,36 +151,54 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         # get jet & MET collections (no corrections in scouting)
         self.correctJetAndMET(event)
 
-        # MET selection
-        if event.met.pt < 50: return False      
-
-        # leptonic W pt selection
+        # ttCR region: no MET or leptonic-W pt selection.
+        # leptonic W still computed for the output branch.
         event.mu._mass = 0.1057
         event.leptonicW = polarP4(event.mu, mass="_mass") + event.met.p4()
-        if event.leptonicW.Pt() < 100: return False
 
-        # for each ak4 jet, find the closest ak8 jet from the uncleaned collection
-        # some baseline cuts on the fatjets
-        allFatJetsSelected = [fj for fj in event._allFatJets
-                              if fj.pt > 200 and abs(fj.eta) < 2.4]
+        # ------------------------------------------------------------------
+        # Object cleaning following the vhTreeProducer ttCR _cleanObjects:
+        #   - AK8: pt>170, |eta|<2.4, jet_id, ΔR(fj, selectedLeptons) >= 0.8
+        #   - AK4: pt>25,  |eta|<2.4, jet_id, ΔR(j, leading AK8) >= 1.2,
+        #                                       ΔR(j, selectedLeptons) >= 0.4
+        # We build these locally (event.ak8jets_clean, event.ak4jets) and drop
+        # the base-class event.ak4jets so the two don't disagree.
+        # ------------------------------------------------------------------
+
+        # local jet_id matching vhTreeProducer.jet_id (ScoutingJetID 13.6 TeV).
+        # guarded so a missing field doesn't crash if the scouting AK4/AK8
+        # collection here doesn't carry the ID inputs.
+        def jet_id(jet):
+            try:
+                return (
+                    (abs(jet.eta) < 2.6 and jet.nConstituents > 1 and jet.nCh > 0
+                     and jet.neEmEF < 0.9 and jet.muEF < 0.8 and jet.neHEF < 0.99)
+                    or (abs(jet.eta) >= 2.6 and abs(jet.eta) < 2.7
+                        and jet.nNh > 1 and jet.muEF < 0.8)
+                    or (abs(jet.eta) >= 2.7 and abs(jet.eta) < 3.0
+                        and jet.nNh > 0 and jet.neEmEF < 0.99)
+                )
+            except (AttributeError, RuntimeError):
+                # ID inputs not available on this collection -> don't reject on ID
+                return True
 
         # ak4 jet truth info 
         # in case genjet is not available (data)
-        #hasGenJets = hasattr(event, "nGenJet") or hasattr(event, "GenJet_hadronFlavour")
         if self.isMC:
             genjets = Collection(event, "GenJet")
         else:
             genjets = None
-        
+
+        event.fatjets = [fj for fj in event.fatjets  if fj.pt > 170 and abs(fj.eta) < 2.4 and jet_id(fj)]
+        event.ak4jets = [j for j in event.ak4jets if jet_id(j)]
         event.ak4jets = sorted(event.ak4jets, key=lambda j: j.pt, reverse=True)
         DeltaPhi_jets_met = []
         for j in event.ak4jets:
             # compute DeltaPhi between jets and MET
             DeltaPhi = abs(deltaPhi(j.phi, event.met.phi))
             DeltaPhi_jets_met.append(DeltaPhi)
-            
-            prefix = "bjet_closestFatJet_"
-            fj, dr = closest(j, allFatJetsSelected)
+
+            fj, dr = closest(j, event.fatjets)
             j.closestFatJet = fj
             j.closestFatJet_dr = dr
 
@@ -168,85 +214,14 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
                 j.flavor = getattr(genjet, "hadronFlavour", -1)
             else:
                 j.flavor = -1
-            
-            # closest fatjet scoutGlobalParT scores
-            j.closestak8_scoutGlobalParT_prob_Xbb = fj.scoutGlobalParT_prob_Xbb if fj else -1
-            j.closestak8_scoutGlobalParT_prob_Xbc = fj.scoutGlobalParT_prob_Xbc if fj else -1
-            j.closestak8_scoutGlobalParT_prob_Xbs = fj.scoutGlobalParT_prob_Xbs if fj else -1
-            j.closestak8_scoutGlobalParT_HbbVsQCD = convert_prob(fj, ['Xbb'], ['QCD'], prefix='scoutGlobalParT_prob_') if fj else -1
-            j.closestak8_scoutGlobalParT_HbqVsQCD = convert_prob(fj, ['Xbc','Xbs'], ['QCD'], prefix='scoutGlobalParT_prob_') if fj else -1
-            j.closestak8_scoutGlobalParT_HbbcsVsQCD = convert_prob(fj, ['Xbb','Xbc','Xbs'], ['QCD'], prefix='scoutGlobalParT_prob_') if fj else -1
-            j.closestak8_scoutGlobalParT_HcsVsQCD = convert_prob(fj, ['Xcs'], ['QCD'], prefix='scoutGlobalParT_prob_') if fj else -1
-            j.closestak8_scoutGlobalParT_HbbVsHcc = convert_prob(fj, ['Xbb'], ['Xcc'], prefix='scoutGlobalParT_prob_') if fj else -1
-            j.closestak8_scoutGlobalParT_HbbVsHqq = convert_prob(fj, ['Xbb'], ['Xqq'], prefix='scoutGlobalParT_prob_') if fj else -1
 
         self.out.fillBranch("n_ak4jets", len(event.ak4jets))
         self.out.fillBranch("deltaPhi_jets_met", DeltaPhi_jets_met)
 
-        # b-jet selection: select events where there is at least one b-tagged jet
-        # relatively close to the selected muon.
-        # note: preliminary; to find out which scores and threshold to use for 2024 scouting.
-        bjets = [j for j in event.ak4jets if abs(deltaPhi(j, event.mu)) < 2
-                 and j.closestFatJet is not None
-                 and j.closestFatJet_dr < 0.8
-                 #and j.closestak8_scoutGlobalParT_HbbcsVsQCD > self.scouting_ak4_PNet_WP_M 
-                 #and j.closestak8_scoutGlobalParT_HbbcsVsQCD > 0.3
-                ]
-        if len(bjets) == 0: return False
-
-        HbqvsQCD = []
-        flavors = []
-        Xbb = []
-        Xbc = []
-        Xbs = []
-        HbbvsQCD = []
-        HcsvsQCD = []
-        HbbvsHqq = []
-        genidx = []
-        dR = []
-        HbbvsHcc = []
-        HbbcsvsQCD = []
-
-        # fill bjet closest fatjet scores
-        prefix = "bjet_closestFatJet_"  
-        for j in bjets:
-            HbqvsQCD.append(j.closestak8_scoutGlobalParT_HbqVsQCD)
-            Xbb.append(j.closestak8_scoutGlobalParT_prob_Xbb)
-            Xbc.append(j.closestak8_scoutGlobalParT_prob_Xbc)
-            Xbs.append(j.closestak8_scoutGlobalParT_prob_Xbs)
-            HbbvsQCD.append(j.closestak8_scoutGlobalParT_HbbVsQCD)
-            HcsvsQCD.append(j.closestak8_scoutGlobalParT_HcsVsQCD)
-            HbbvsHqq.append(j.closestak8_scoutGlobalParT_HbbVsHqq)
-            HbbcsvsQCD.append(j.closestak8_scoutGlobalParT_HbbcsVsQCD)
-            flavors.append(j.flavor)
-            genidx.append(j.genJetIdx)
-            dR.append(j.closestFatJet_dr)
-            HbbvsHcc.append(j.closestak8_scoutGlobalParT_HbbVsHcc)
-
-        self.out.fillBranch("n_bjets", len(HbqvsQCD))
-        self.out.fillBranch(prefix + "scoutGloParT_Xbb", Xbb)
-        self.out.fillBranch(prefix + "scoutGloParT_Xbc", Xbc)
-        self.out.fillBranch(prefix + "scoutGloParT_Xbs", Xbs)
-        self.out.fillBranch(prefix + "scoutGloParT_HbbVsQCD", HbbvsQCD)
-        self.out.fillBranch(prefix + "scoutGloParT_HbqVsQCD", HbqvsQCD)
-        self.out.fillBranch(prefix + "scoutGloParT_HcsVsQCD", HcsvsQCD)
-        self.out.fillBranch(prefix + "scoutGloParT_HbbVsHcc", HbbvsHcc)
-        self.out.fillBranch(prefix + "scoutGloParT_HbbVsHqq", HbbvsHqq)
-        self.out.fillBranch(prefix + "scoutGloParT_HbbcsVsQCD", HbbcsvsQCD)
-        self.out.fillBranch(prefix + "ak4_ak8_dR", dR)
-        if self.isMC:
-            self.out.fillBranch(prefix + "ScoutingPFJetRecluster_genJetIdx", genidx)
-            self.out.fillBranch(prefix + "hadronFlavour", flavors) 
-        
-        # select the b-jet with the highest b-tagging score close to the muon
-        bscores = [j.closestak8_scoutGlobalParT_HbbVsQCD for j in bjets]
-        maxindex = bscores.index(max(bscores))
-        event.bjet = bjets[maxindex]
-
-        # fat-jet selection: select events where there is at least one fat jet
-        # relatively far from the selected muon.
-        if len(event.fatjets) == 0: return False
-        probe_jets = [fj for fj in event.fatjets if abs(deltaPhi(fj, event.mu)) > 2]
+        # fat-jet (probe) selection matching the ttCR region: pt > 170, |eta| < 2.4,
+        # and separated from the selected lepton. Require at least one probe jet.
+        probe_jets = [fj for fj in event.fatjets
+                      if abs(deltaPhi(fj, event.mu)) > 2]
         if len(probe_jets) == 0: return False
 
         # selection is done, now calculate event properties
@@ -258,7 +233,9 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         # fill output branches
         self.fillBaseEventInfo(event)
         self.fillFatJetInfo(event, probe_jets)
-        self.out.fillBranch("passMuTrig", passTrigger(event, ["HLT_Mu50"]))
+        self.out.fillBranch("passMuTrig", passTrigger(event, ["DST_PFScouting_SingleMuon"]))
+        self.out.fillBranch("n_lep", len(event.leptons))
+        self.out.fillBranch("lep_pdgId", event.lep_pdgId)
         self.out.fillBranch("muon_pt", event.mu.pt)
         self.out.fillBranch("muon_eta", event.mu.eta)
         self.out.fillBranch("muon_phi", event.mu.phi)
@@ -270,17 +247,6 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
         self.out.fillBranch("muon_nRecoMuonMatchedStations", event.mu.nRecoMuonMatchedStations)
         self.out.fillBranch("muon_nTrackerLayersWithMeasurement", event.mu.nTrackerLayersWithMeasurement)
         self.out.fillBranch("leptonicW_pt", event.leptonicW.Pt())
-        self.out.fillBranch("bjet_pt", event.bjet.pt)
-        self.out.fillBranch("bjet_eta", event.bjet.eta)
-        self.out.fillBranch("bjet_phi", event.bjet.phi)
-        self.out.fillBranch("bjet_particleNet_prob_b", event.bjet.particleNet_prob_b)
-        self.out.fillBranch("bjet_particleNet_prob_bb", event.bjet.particleNet_prob_bb)
-        self.out.fillBranch("bjet_particleNet_prob_c", event.bjet.particleNet_prob_c)
-        self.out.fillBranch("bjet_particleNet_prob_cc", event.bjet.particleNet_prob_cc)
-        self.out.fillBranch("bjet_particleNet_prob_uds", event.bjet.particleNet_prob_uds)
-        self.out.fillBranch("bjet_particleNet_prob_g", event.bjet.particleNet_prob_g)
-        self.out.fillBranch("bjet_closestFatJet_HbbVsQCD_for_cut", event.bjet.closestak8_scoutGlobalParT_HbbVsQCD)
-        self.out.fillBranch("bjet_closestFatJet_HbbcsVsQCD_for_cut", event.bjet.closestak8_scoutGlobalParT_HbbcsVsQCD)
 
         for mod in self._modules.values():
             if not mod.analyze(event):

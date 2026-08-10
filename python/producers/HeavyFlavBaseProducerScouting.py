@@ -79,8 +79,10 @@ class HeavyFlavBaseProducerScouting(Module, object):
 
         # update _opts and _jmeSysts with kwargs
         for k in kwargs:
-            if k in self._jmeSysts: self._jmeSysts[k] = kwargs[k]
-            else: self._opts[k] = kwargs[k]
+            if k in self._jmeSysts: 
+                self._jmeSysts[k] = kwargs[k]
+            else: 
+                self._opts[k] = kwargs[k]
 
         # printouts for debugging
         logger.info('Initialized HeavyFlavBaseProducerScouting with the following settings:')
@@ -270,13 +272,13 @@ class HeavyFlavBaseProducerScouting(Module, object):
         electrons = Collection(event, "ScoutingElectron")
         for el in electrons:
             el.etaSC = el.eta #+ el.deltaEtaSC
-            if el.pt > 10 and abs(el.eta) < 2.5:# and el.mvaIso_WP90:
+            if el.pt > 20 and abs(el.eta) < 2.5:# and el.mvaIso_WP90:
                 event.looseLeptons.append(el)
 
         # muons
         muons = Collection(event, "ScoutingMuonVtx")
         for mu in muons:
-            if mu.pt > 10 and abs(mu.eta) < 2.4:
+            if mu.pt > 20 and abs(mu.eta) < 2.4:
                 event.looseLeptons.append(mu)
 
         # sort by pt
@@ -299,6 +301,7 @@ class HeavyFlavBaseProducerScouting(Module, object):
                 for attr, default in attrs:
                     setattr(tj, attr, default)
     '''
+
     def correctJetAndMET(self, event):
         if self._needsJMECorr:
             rho = getattr(event, self.rho_branch_name)
@@ -381,26 +384,12 @@ class HeavyFlavBaseProducerScouting(Module, object):
                 fj.is_qualified = True
             event._allFatJets = sorted(event._allFatJets, key=lambda x: x.pt, reverse=True)
         except Exception: pass
-        
-        # select jets
-        if self._doJetCleaning:
-            event.ak4jets = [
-                j for j in event._allJets
-                if j.pt > 25
-                and abs(j.eta) < 2.4
-                and closest(j, getattr(event, "looseLeptons", []))[1] >= 0.4
-            ]
-        else:
-            event.ak4jets = [
-                j for j in event._allJets
-                if j.pt > 25 and abs(j.eta) < 2.4
-            ]
 
         # select fatjets
         if self._doJetCleaning:
             event.fatjets = [
                 fj for fj in event._allFatJets
-                if fj.pt > 200
+                if fj.pt > 170
                 and abs(fj.eta) < 2.4
                 and fj.msoftdrop > 30 
                 and fj.msoftdrop < 200
@@ -409,9 +398,24 @@ class HeavyFlavBaseProducerScouting(Module, object):
         else:
             event.fatjets = [
                 fj for fj in event._allFatJets
-                if fj.pt > 200 and abs(fj.eta) < 2.4
+                if fj.pt > 170 and abs(fj.eta) < 2.4
                 and fj.msoftdrop > 30 
                 and fj.msoftdrop < 200
+            ]
+
+        # select jets
+        if self._doJetCleaning:
+            event.ak4jets = [
+                j for j in event._allJets
+                if j.pt > 25
+                and abs(j.eta) < 2.4
+                and closest(j, getattr(event, "looseLeptons", []))[1] >= 0.4
+                and closest(j, event.fatjets[:1])[1] >= 1.2
+            ]
+        else:
+            event.ak4jets = [
+                j for j in event._allJets
+                if j.pt > 25 and abs(j.eta) < 2.4
             ]
 
         # HT = scalar sum of selected AK4 jet pT
