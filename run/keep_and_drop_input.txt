@@ -7,6 +7,8 @@ dropmatch n?SubGenJetAK8_.+
 # AK4 jets
 drop ScoutingPFJet_* # use only the reclustered collection
 keep ScoutingPFJetRecluster_* # use only this one
+keep nScoutingPFJetRecluster
+keep nScoutingFatPFJetRecluster
 keep nScoutingPrimaryVertex
 
 # Electron
@@ -15,9 +17,17 @@ keep ScoutingElectron_pt
 keep ScoutingElectron_eta
 keep ScoutingElectron_phi
 keep ScoutingElectron_r9
-
+keep ScoutingElectron_dEtaIn
+keep ScoutingElectron_dPhiIn
+keep ScoutingElectron_sigmaIetaIeta
+keep ScoutingElectron_ooEMOop
+keep ScoutingElectron_hOverE
+keep ScoutingElectron_trackIso
+keep ScoutingElectron_ecalIso
+keep ScoutingElectron_hcalIso
 # Muon
 drop ScoutingMuon*
+keep ScoutingMuonVtx_nValidPixelHits
 keep ScoutingMuonVtx_pt
 keep ScoutingMuonVtx_eta
 keep ScoutingMuonVtx_phi
@@ -50,6 +60,7 @@ dropmatch n?ScoutingPhoton_.+
 # HLT
 drop HLT*
 drop DST*
+keep DST_PFScouting_JetHT
 keep DST_PFScouting_SingleMuon
 keep HLT_Mu50
 

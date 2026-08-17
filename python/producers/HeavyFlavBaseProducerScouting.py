@@ -75,6 +75,7 @@ class HeavyFlavBaseProducerScouting(Module, object):
         self._opts = {'sfbdt_threshold': -99,
                       'run_tagger': False, 'tagger_versions': ['V02b', 'V02c', 'V02d'],
                       'run_mass_regression': False, 'mass_regression_versions': ['V01a', 'V01b', 'V01c'],
+                      'tagger_threshold_cc': None, 'tagger_threshold_bb': None,
                       'WRITE_CACHE_FILE': False, 'runModules': True, 'fillSystWeights': True}
 
         # update _opts and _jmeSysts with kwargs
@@ -304,7 +305,7 @@ class HeavyFlavBaseProducerScouting(Module, object):
 
     def correctJetAndMET(self, event):
         if self._needsJMECorr:
-            rho = getattr(event, self.rho_branch_name)
+            rho = getattr(event, self.rho_branch_name) if self.rho_branch_name else 0.0
             # correct AK4 jets and MET
             self.jetmetCorr.setSeed(rndSeed(event, event._allJets))
             self.jetmetCorr.correctJetAndMET(
@@ -386,24 +387,29 @@ class HeavyFlavBaseProducerScouting(Module, object):
         except Exception: pass
 
         # select fatjets
+        # NOTE: pure-ttCR probe has NO softdrop-mass window. The muon producer
+        # tightens this further (jet_id + selectedLepton cleaning) when it builds
+        # the probe from event.fatjets, so keep this as the loose, looseLepton-
+        # cleaned collection with only pt/eta cuts.
         if self._doJetCleaning:
             event.fatjets = [
                 fj for fj in event._allFatJets
                 if fj.pt > 170
                 and abs(fj.eta) < 2.4
-                and fj.msoftdrop > 30 
-                and fj.msoftdrop < 200
                 and closest(fj, getattr(event, "looseLeptons", []))[1] >= self._jetConeSize
             ]
         else:
             event.fatjets = [
                 fj for fj in event._allFatJets
                 if fj.pt > 170 and abs(fj.eta) < 2.4
-                and fj.msoftdrop > 30 
-                and fj.msoftdrop < 200
             ]
 
         # select jets
+        # NOTE: this is the LOOSE AK4 collection (looseLepton-cleaned, ΔR>1.2 vs
+        # the loose event.fatjets[:1]). The muon producer's _cleanObjects rebuilds
+        # event.ak4jets with the tighter ttCR references (jet_id, selectedLepton
+        # cleaning, ΔR vs the decorated probe). Same cut *values*, tighter refs —
+        # a loose→tight refinement, not a conflicting redefinition.
         if self._doJetCleaning:
             event.ak4jets = [
                 j for j in event._allJets
@@ -421,10 +427,18 @@ class HeavyFlavBaseProducerScouting(Module, object):
         # HT = scalar sum of selected AK4 jet pT
         event.ht = float(sum(j.pt for j in event.ak4jets))
 
+    def evalTagger(self, jets):
+        # bb/cc-vs-QCD scores, as in vhTreeProducer._evalTagger
+        for j in jets:
+            j.pn_HccVsQCD = convert_prob(j, ['Xcc'], ['QCD'], prefix='scoutGlobalParT_prob_')
+            j.pn_HbbVsQCD = convert_prob(j, ['Xbb'], ['QCD'], prefix='scoutGlobalParT_prob_')
+
     def evalMassRegression(self, jets):
         for j in jets:
-            j.ParT_resonanceMass = j.scoutGlobalParT_massCorrResonance * j.mass
-            j.sdmass = j.msoftdrop
+            mcorr = getattr(j, "scoutGlobalParT_massCorrResonance", -1)
+            jmass = getattr(j, "mass", 0.0)
+            j.ParT_resonanceMass = (mcorr * jmass) if mcorr >= 0 else -1
+            j.sdmass = getattr(j, "msoftdrop", -1)
             #j.masses = {
             #    'sdmass': j.msoftdrop,
                 #'regressed_mass': j.particleNet_mass,
@@ -552,29 +566,35 @@ class HeavyFlavBaseProducerScouting(Module, object):
         
         prefix = "fj_1_"  # assuming ak8 is fj_1
         
+        # ---- closest hadronic W ----
         genW, dr_W = closest(ak8, hadGenWs)
-
-        # info of the closest hadGenW
-        wdecay_ = max([abs(d.pdgId) for d in get_daughters(genW)], default=0) if genW else 0
+        wdaus = get_daughters(genW) if genW else []
+        wdecay_ = max([abs(d.pdgId) for d in wdaus], default=0) if wdaus else 0
         self.out.fillBranch(prefix + "dr_W", dr_W)
         self.out.fillBranch(prefix + "dr_W_daus",
-                            max([deltaR(ak8, dau) for dau in get_daughters(genW)]) if genW else 99)
+                            max([deltaR(ak8, dau) for dau in wdaus]) if wdaus else 99)
         self.out.fillBranch(prefix + "W_decay", wdecay_)
 
-        # sort tops by deltaR to ak8
+        # ---- closest hadronic top ----
         genT, dr_T = closest(ak8, hadGenTops)
-        #hadGenTops.sort(key=lambda x: deltaR2(x, ak8))
-        #t = genT if len(genT) else None
-        self.out.fillBranch(prefix + "dr_T_b", deltaR(ak8, genT.genB) if len(hadGenTops) else 99)
 
-        drwq1, drwq2 = [deltaR(ak8, dau) for dau in get_daughters(
-                genT.genW)] if len(hadGenTops) else [99, 99]
-        wq1_pdgId, wq2_pdgId = [dau.pdgId for dau in get_daughters(genT.genW)] if len(hadGenTops) else [0, 0]
-        if drwq1 < drwq2:
-                drwq1, drwq2 = drwq2, drwq1
-                wq1_pdgId, wq2_pdgId = wq2_pdgId, wq1_pdgId
-        
+        # Pair each W-quark's dR with its own pdgId in a single structure, then
+        # sort so index 0 = farther quark (max), index 1 = closer quark (min).
+        # This mirrors the offline HeavyFlavBaseProducer (where genT.genW.daus is
+        # a fixed 2-tuple) and avoids the desync / unpack-crash that separate
+        # get_daughters() calls could cause when a W has != 2 stored daughters.
+        tWqDaus = get_daughters(genT.genW) if genT else []
+        wq_pairs = sorted(
+            ((deltaR(ak8, d), d.pdgId) for d in tWqDaus),
+            key=lambda p: p[0], reverse=True,
+        )
+        if len(wq_pairs) >= 2:
+            (drwq1, wq1_pdgId), (drwq2, wq2_pdgId) = wq_pairs[0], wq_pairs[1]
+        else:
+            drwq1, drwq2, wq1_pdgId, wq2_pdgId = 99, 99, 0, 0
+
         self.out.fillBranch(prefix + "dr_T", dr_T)
+        self.out.fillBranch(prefix + "dr_T_b", deltaR(ak8, genT.genB) if genT else 99)
         self.out.fillBranch(prefix + "dr_T_Wq_max", drwq1)
         self.out.fillBranch(prefix + "dr_T_Wq_min", drwq2)
         self.out.fillBranch(prefix + "T_Wq_max_pdgId", wq1_pdgId)
@@ -601,8 +621,8 @@ class HeavyFlavBaseProducerScouting(Module, object):
             self.out.fillBranch(prefix + "phi", fj.phi)
             self.out.fillBranch(prefix + "mass", getattr(fj, "mass", 0.0))
             #self.out.fillBranch(prefix + "rawmass", fj.mass)
-            self.out.fillBranch(prefix + "sdmass", fj.msoftdrop)
-            self.out.fillBranch(prefix + "ParT_resonanceMass", fj.ParT_resonanceMass)
+            self.out.fillBranch(prefix + "sdmass", getattr(fj, "msoftdrop", -1))
+            self.out.fillBranch(prefix + "ParT_resonanceMass", getattr(fj, "ParT_resonanceMass", -1))
             tau1 = getattr(fj, "tau1", -1)
             tau2 = getattr(fj, "tau2", -1)
             tau3 = getattr(fj, "tau3", -1)
@@ -642,7 +662,7 @@ class HeavyFlavBaseProducerScouting(Module, object):
 
             qcd = getattr(fj, "scoutGlobalParT_prob_QCD", 1.0)
             self.out.fillBranch(prefix + "scoutGloParT_HbbVsQCD", convert_prob(fj, ['Xbb'], ['QCD'], prefix='scoutGlobalParT_prob_'))
-            self.out.fillBranch(prefix + "scoutGloParT_HccVsQCD", convert_prob(fj, ['Xcc'], ['QCD'], prefix='scoutGlobalParT_prob_'))
+            self.out.fillBranch(prefix + "scoutGloParT_HccVsQCD", convert_prob(fj, ['Xcc','Xbc'], ['QCD'], prefix='scoutGlobalParT_prob_'))
             self.out.fillBranch(prefix + "scoutGloParT_HqqVsQCD", convert_prob(fj, ['Xqq'], ['QCD'], prefix='scoutGlobalParT_prob_'))
             self.out.fillBranch(prefix + "scoutGloParT_twoprong", convert_prob(fj, ['Xbb', 'Xcc', 'Xcs', 'Xqq', 'Xss'], ['QCD'], prefix='scoutGlobalParT_prob_'))
             #self.out.fillBranch(prefix + "scoutGloParT_HqqVsQCD", convert_prob(fj, ['Xqq','Xss'], ['QCD'], prefix='scoutGlobalParT_prob_'))
@@ -657,5 +677,3 @@ class HeavyFlavBaseProducerScouting(Module, object):
             self.out.fillBranch(prefix + "scoutGloParT_massCorrGenericW2p", getattr(fj, "scoutGlobalParT_massCorrGenericW2p", -1))
             self.out.fillBranch(prefix + "scoutGloParT_massCorrGenericX2p", getattr(fj, "scoutGlobalParT_massCorrGenericX2p", -1))
             self.out.fillBranch(prefix + "scoutGloParT_massCorrResonance", getattr(fj, "scoutGlobalParT_massCorrResonance", -1))
-            
-            
