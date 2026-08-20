@@ -106,7 +106,8 @@ class MuonSampleProducerScouting(HeavyFlavBaseProducerScouting):
                        if mu.pt > 30 and abs(mu.eta) < 2.4
                        and compute_tk_dxy_dz(mu)[0] < 0.2
                        and compute_tk_dxy_dz(mu)[1] < 0.5
-                       and mu.trackIso < 0.005
+                       #and mu.trackIso < 0.005
+                       and mu.trackIso / mu.pt < 0.15
                        and mu.normchi2 < 3.0
                        and mu.nValidRecoMuonHits > 0 
                        and mu.nRecoMuonMatchedStations > 1
