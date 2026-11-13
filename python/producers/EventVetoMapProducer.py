@@ -6,6 +6,7 @@ ROOT.PyConfig.IgnoreCommandLineOptions = True
 from PhysicsTools.NanoAODTools.postprocessing.framework.datamodel import Collection
 from PhysicsTools.NanoAODTools.postprocessing.framework.eventloop import Module
 from ..helpers.utils import closest
+from ..helpers.jetmetCorrector import JetMETCorrector, _jmeJson
 
 # def debug(msg, activated=True):
 #     if activated:
@@ -18,20 +19,18 @@ from ..helpers.utils import closest
 class EventVetoMapProducer(Module):
 
     def __init__(self, year, **kwargs):
-        #print("hellllooooo \n\n\n\n\n\n\n\n")
         self._opts = {}
         self._opts.update(**kwargs)
         self._usePuppiJets = True #self._opts['usePuppiJets']
 
-        era = {2015: '2016preVFP_UL', 2016: '2016postVFP_UL', 2017: '2017_UL', 2018: '2018_UL', 
-               2021: '2022_Summer22', 2022: '2022_Summer22EE', 2023: '2023_Summer23', 2024: '2023_Summer23BPix'}[year]
-
         name = {2015: 'Summer19UL16_V1', 2016: 'Summer19UL16_V1',
                 2017: 'Summer19UL17_V1', 2018: 'Summer19UL18_V1',
-                2021: 'Summer22_23Sep2023_RunCD_V1', 2022: 'Summer22EE_23Sep2023_RunEFG_V1',
-                2023: 'Summer23Prompt23_RunC_V1', 2024: 'Summer23BPixPrompt23_RunD_V1'}[year]
+                20220: 'Summer22_23Sep2023_RunCD_V1', 20221: 'Summer22EE_23Sep2023_RunEFG_V1',
+                20230: 'Summer23Prompt23_RunC_V1', 20231: 'Summer23BPixPrompt23_RunD_V1',
+                2024: 'Summer24Prompt24_RunBCDEFGHI_V1'}[year]
 
-        filename = f'/cvmfs/cms.cern.ch/rsync/cms-nanoAOD/jsonpog-integration/POG/JME/{era}/jetvetomaps.json.gz'
+        # era json directory from the shared JME pin table (see helpers/jetmetCorrector.py)
+        filename = _jmeJson(JetMETCorrector._ERAS[year][0], 'jetvetomaps.json.gz')
         self.corr = correctionlib.CorrectionSet.from_file(filename)[name]
 
     def beginFile(self, inputFile, outputFile, inputTree, wrappedOutputTree):
@@ -41,19 +40,20 @@ class EventVetoMapProducer(Module):
     def analyze(self, event):
         """process event, return True (go to next module) or False (fail, go to next event)"""
 
-        allJets = Collection(event, "Jet")
+        allJets = event._allJets
         muons = Collection(event, "Muon")
 
         eventVeto = False
         for j in allJets:
+            # https://gitlab.cern.ch/cms-analysis/jme/jerc-application-tutorial/-/blob/60281d1527be8b1b4b7d392bffc7d23a5e4d5c03/JvmApplication.cpp#L24
             if not (j.pt > 15 and (j.jetId & 4)):
                 # pt, tightId
                 continue
-            if not self._usePuppiJets and not (j.pt > 50 or j.puId >= self.puID_WP):
-                # apply jet puId only for CHS jets
-                continue
-            if closest(j, muons)[1] < 0.2:
-                continue
+            #if not self._usePuppiJets and not (j.pt > 50 or j.puId >= self.puID_WP):
+            #    # apply jet puId only for CHS jets
+            #    continue
+            #if closest(j, muons)[1] < 0.2:
+            #    continue
             if j.neEmEF + j.chEmEF > 0.9:
                 continue
             # debug('jet phi:%.1f, eta:%.2f' % (j.phi, j.eta))

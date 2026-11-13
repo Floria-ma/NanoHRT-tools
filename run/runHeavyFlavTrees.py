@@ -44,7 +44,7 @@ golden_json = {
     2021: 'Cert_Collisions2022_355100_362760_Golden.json',
     2022: 'Cert_Collisions2022_355100_362760_Golden.json',
     2023: 'Cert_Collisions2023_366442_370790_Golden.json',
-    2024: 'Cert_Collisions2023_366442_370790_Golden.json',
+    2024: 'Cert_Collisions2024_378981_386951_Golden.json',
 }
 
 
@@ -97,7 +97,7 @@ def _process(args):
     elif year == 2021:
         PUyear = 2022
     elif year == 2024:
-        PUyear = 2023
+        PUyear = 2024
     else:
         PUyear = year
 
@@ -120,7 +120,7 @@ def _process(args):
     # MC for syst.
     if args.run_syst and not args.run_data:
 
-        nominal w/ PDF/Scale wegihts
+       # nominal w/ PDF/Scale wegihts
         logging.info('Start making nominal trees with PDF/scale weights...')
         syst_name = 'LHEWeight'
         opts = copy.deepcopy(args)

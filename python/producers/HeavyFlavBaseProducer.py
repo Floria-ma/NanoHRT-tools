@@ -11,13 +11,13 @@ from ..helpers.utils import deltaR, closest, polarP4, sumP4, get_subjets, correc
 from ..helpers.xgbHelper import XGBEnsemble
 from ..helpers.nnHelper import convert_prob, ensemble
 from ..helpers.jetmetCorrector import JetMETCorrector, rndSeed
-#from .EventVetoMapProducer import EventVetoMapProducer
+from .EventVetoMapProducer import EventVetoMapProducer
 
 import logging
 logger = logging.getLogger('nano')
 configLogger('nano', loglevel=logging.INFO)
 
-lumi_dict = {2015: 19.52, 2016: 16.81, 2017: 41.48, 2018: 59.83, 2021: 7.98, 2022: 26.67, 2023:17.794, 2024:9.451}
+lumi_dict = {2015: 19.52, 2016: 16.81, 2017: 41.48, 2018: 59.83, 2021: 7.98, 2022: 26.67, 2023:17.794, 2024:109.95}
 
 class _NullObject:
     '''An null object which does not store anything, and does not raise exception.'''
