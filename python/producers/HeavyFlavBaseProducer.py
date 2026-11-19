@@ -137,12 +137,6 @@ class HeavyFlavBaseProducer(Module, object):
         self.out.branch("ht", "F")
         self.out.branch("met", "F")
         self.out.branch("metphi", "F")
-        if self.isMC and self._jmeSysts['jesr_extra_br']:
-            # HT with JES/JER correction
-            self.out.branch("ht_jesUncFactorUp", "F")
-            self.out.branch("ht_jesUncFactorDn", "F")
-            self.out.branch("ht_jerSmearFactorUp", "F")
-            self.out.branch("ht_jerSmearFactorDn", "F")
 
         # Large-R jets
         for idx in ([1, 2] if self._channel in ['qcd', 'mutagged'] else [1]):
@@ -286,11 +280,6 @@ class HeavyFlavBaseProducer(Module, object):
             self.fatjetCorr.setSeed(rndSeed(event, event._allFatJets))
             self.fatjetCorr.correctJetAndMET(jets=event._allFatJets, met=None, rho=rho,
                                              genjets=Collection(event, self._fj_gen_name) if self.isMC else None,
-                                             isMC=self.isMC, runNumber=event.run)
-            # correct subjets
-            self.subjetCorr.setSeed(rndSeed(event, event.subjets))
-            self.subjetCorr.correctJetAndMET(jets=event.subjets, met=None, rho=rho,
-                                             #genjets=Collection(event, self._sj_gen_name) if self.isMC else None,
                                              isMC=self.isMC, runNumber=event.run)
 
         # jet mass resolution smearing
@@ -506,28 +495,10 @@ class HeavyFlavBaseProducer(Module, object):
             self.out.fillBranch(prefix + "ParT_Hcc", fj.pt_Hcc)
             self.out.fillBranch(prefix + "ParT_Hqq", fj.pt_Hqq)
 
-            if self._opts['run_tagger']:
-                self.out.fillBranch(prefix + "origParticleNetMD_XccVsQCD",
-                                    convert_prob(fj, ['Xcc'], None, prefix='ParticleNetMD_prob'))
-                self.out.fillBranch(prefix + "origParticleNetMD_XbbVsQCD",
-                                    convert_prob(fj, ['Xbb'], None, prefix='ParticleNetMD_prob'))
-
             try:
                 self.out.fillBranch(prefix + "ParticleNet_mass", fj.particleNet_mass)
             except RuntimeError:
                 self.out.fillBranch(prefix + "ParticleNet_mass", -1)
-            try:
-                self.out.fillBranch(prefix + "btagDDBvLV2", fj.btagDDBvLV2)
-                self.out.fillBranch(prefix + "btagDDCvBV2", fj.btagDDCvBV2)
-                self.out.fillBranch(prefix + "btagDDCvLV2", fj.btagDDCvLV2)
-                self.out.fillBranch(prefix + "btagDeepB", fj.btagDeepB)
-                self.out.fillBranch(prefix + "btagHbb", fj.btagHbb)
-            except RuntimeError:
-                self.out.fillBranch(prefix + "btagDDBvLV2", -1)
-                self.out.fillBranch(prefix + "btagDDCvBV2", -1)
-                self.out.fillBranch(prefix + "btagDDCvLV2", -1)
-                self.out.fillBranch(prefix + "btagDeepB", -1)
-                self.out.fillBranch(prefix + "btagHbb", -1)
 
             # matching variables
             if self.isMC:
@@ -566,38 +537,3 @@ class HeavyFlavBaseProducer(Module, object):
                 self.out.fillBranch(prefix + "T_Wq_max_pdgId", wq1_pdgId)
                 self.out.fillBranch(prefix + "T_Wq_min_pdgId", wq2_pdgId)
                 self.out.fillBranch(prefix + "T_pt", fj.genT.pt if fj.genT else -1)
-
-                if self._jmeSysts['jesr_extra_br']:
-                    self.out.fillBranch(prefix + "jesUncFactorUp", fj.jesUncFactorUp)
-                    self.out.fillBranch(prefix + "jesUncFactorDn", fj.jesUncFactorDn)
-                    self.out.fillBranch(prefix + "jerSmearFactorUp", fj.jerSmearFactorUp)
-                    self.out.fillBranch(prefix + "jerSmearFactorDn", fj.jerSmearFactorDn)
-
-                if self.isMC and idx==(2 if self._channel == 'qcd' else 1) and self._channel != 'higgs':
-                    for hadtype in ['b', 'c']:
-                        for hadidx in [1, 2]:
-                            gp = fj.genBhadron[hadidx - 1] if hadtype=='b' else fj.genChadron[hadidx - 1]
-                            fill_gp = self._get_filler(gp)  # wrapper, fill default value if sv=None
-                            fill_gp(prefix + "gen{}hadron{}_pt".format(hadtype, hadidx), gp.pt)
-                            fill_gp(prefix + "gen{}hadron{}_eta".format(hadtype, hadidx), gp.eta)
-                            fill_gp(prefix + "gen{}hadron{}_phi".format(hadtype, hadidx), gp.phi)
-                            fill_gp(prefix + "gen{}hadron{}_mass".format(hadtype, hadidx), gp.mass)
-                            fill_gp(prefix + "gen{}hadron{}_pdgId".format(hadtype, hadidx), gp.pdgId)
-
-                if self.isMC and self._channel != 'higgs':
-                    self.out.fillBranch(prefix + "npart", fj.npart)
-                    self.out.fillBranch(prefix + "nbpart", fj.nbpart)
-                    self.out.fillBranch(prefix + "ncpart", fj.ncpart)
-                    self.out.fillBranch(prefix + "ngpart", fj.ngpart)
-                    self.out.fillBranch(prefix + "part_sumpt", fj.part_sumpt)
-                    self.out.fillBranch(prefix + "bpart_sumpt", fj.bpart_sumpt)
-                    self.out.fillBranch(prefix + "cpart_sumpt", fj.cpart_sumpt)
-                    self.out.fillBranch(prefix + "gpart_sumpt", fj.gpart_sumpt)
-                    self.out.fillBranch(prefix + "npart50", fj.npart50)
-                    self.out.fillBranch(prefix + "nbpart50", fj.nbpart50)
-                    self.out.fillBranch(prefix + "ncpart50", fj.ncpart50)
-                    self.out.fillBranch(prefix + "ngpart50", fj.ngpart50)
-                    self.out.fillBranch(prefix + "part50_sumpt", fj.part50_sumpt)
-                    self.out.fillBranch(prefix + "bpart50_sumpt", fj.bpart50_sumpt)
-                    self.out.fillBranch(prefix + "cpart50_sumpt", fj.cpart50_sumpt)
-                    self.out.fillBranch(prefix + "gpart50_sumpt", fj.gpart50_sumpt)
