@@ -10,7 +10,7 @@ from PhysicsTools.NanoAODTools.postprocessing.framework.eventloop import Module
 from ..helpers.utils import deltaR, closest, polarP4, sumP4, get_subjets, corrected_svmass, configLogger
 from ..helpers.xgbHelper import XGBEnsemble
 from ..helpers.nnHelper import convert_prob, ensemble
-from ..helpers.jetmetCorrector import JetMETCorrector, rndSeed
+from ..helpers.jetmetCorrector import JetMETCorrector, rndSeed, JetIdCalculator, AK15patcher
 from .EventVetoMapProducer import EventVetoMapProducer
 
 import logging
@@ -66,63 +66,32 @@ class HeavyFlavBaseProducer(Module, object):
 
         logger.info('Running %s channel for %s jets with JME systematics %s, other options %s',
                     self._channel, self.jetType, str(self._jmeSysts), str(self._opts))
-
+        
         if self.jetType == 'ak8':
             self._jetConeSize = 0.8
             self._fj_name = 'FatJet'
-            self._sj_name = 'SubJet'
+            #self._sj_name = 'SubJet'
             self._fj_gen_name = 'GenJetAK8'
-            self._sj_gen_name = 'SubGenJetAK8'
-            self._sfbdt_files = [
-                os.path.expandvars(
-                    '$CMSSW_BASE/src/PhysicsTools/NanoHRTTools/data/sfBDT/ak8_ul/xgb_train_qcd.model.%d' % idx)
-                for idx in range(10)]  # FIXME: update to AK8 training
-            self._sfbdt_vars = ['fj_2_tau21', 'fj_2_sj1_rawmass', 'fj_2_sj2_rawmass',
-                                'fj_2_ntracks_sv12', 'fj_2_sj1_sv1_pt', 'fj_2_sj2_sv1_pt']
         elif self.jetType == 'ak15':
             self._jetConeSize = 1.5
             self._fj_name = 'AK15Puppi'
-            self._sj_name = 'AK15PuppiSubJet'
+            #self._sj_name = 'AK15PuppiSubJet'
             self._fj_gen_name = 'GenJetAK15'
-            self._sj_gen_name = 'GenSubJetAK15'
-            self._sfbdt_files = [
-                os.path.expandvars(
-                    '$CMSSW_BASE/src/PhysicsTools/NanoHRTTools/data/sfBDT/ak8_ul/xgb_train_qcd.model.%d' % idx) #QUESTION: shouldn't it be the "ak15" folder?
-                for idx in range(10)]
-            self._sfbdt_vars = ['fj_2_tau21', 'fj_2_sj1_rawmass', 'fj_2_sj2_rawmass',
-                                'fj_2_ntracks_sv12', 'fj_2_sj1_sv1_pt', 'fj_2_sj2_sv1_pt']
         else:
             raise RuntimeError('Jet type %s is not recognized!' % self.jetType)
 
         self._fill_sv = self._channel in ('qcd', 'photon', 'higgs', 'inclusive') and self._opts['sfbdt_threshold'] > -99
+        
+        self.jetidcalc = JetIdCalculator(year=self._year, jetType="AK4PUPPI")
+        self.fatjetidcalc = JetIdCalculator(year=self._year, jetType="AK8PUPPI") # does not work because some branches are missing
+        self.ak15patcher = AK15patcher(year=self._year)
 
         if self._needsJMECorr:
             self.jetmetCorr = JetMETCorrector(year=self.year, jetType="AK4PFchs", **self._jmeSysts)
             self.fatjetCorr = JetMETCorrector(year=self.year, jetType="AK8PFPuppi", **self._jmeSysts)
             self.subjetCorr = JetMETCorrector(year=self.year, jetType="AK4PFPuppi", **self._jmeSysts)
 
-        if self._opts['run_tagger'] or self._opts['run_mass_regression']:
-            from ..helpers.makeInputs import ParticleNetTagInfoMaker
-            from ..helpers.runPrediction import ParticleNetJetTagsProducer
-            self.tagInfoMaker = ParticleNetTagInfoMaker(
-                fatjet_branch=self._fj_name, pfcand_branch='PFCands', sv_branch='SV', jetR=self._jetConeSize)
-            prefix = os.path.expandvars('$CMSSW_BASE/src/PhysicsTools/NanoHRTTools/data')
-            if self._opts['run_tagger']:
-                self.pnTaggers = [ParticleNetJetTagsProducer(
-                    '%s/ParticleNet-MD/%s/{version}/particle-net.onnx' % (prefix, self.jetType),
-                    '%s/ParticleNet-MD/%s/{version}/preprocess.json' % (prefix, self.jetType),
-                    version=ver, cache_suffix='tagger') for ver in self._opts['tagger_versions']]
-            if self._opts['run_mass_regression']:
-                self.pnMassRegressions = [ParticleNetJetTagsProducer(
-                    '%s/MassRegression/%s/{version}/particle_net_regression.onnx' % (prefix, self.jetType),
-                    '%s/MassRegression/%s/{version}/preprocess.json' % (prefix, self.jetType),
-                    version=ver, cache_suffix='mass') for ver in self._opts['mass_regression_versions']]
-
-        # https://twiki.cern.ch/twiki/bin/viewauth/CMS/BtagRecommendation
-        self.DeepJet_WP_L = {2015: 0.0508, 2016: 0.0480, 2017: 0.0532, 2018: 0.0490, 2021:0.0583, 2022: 0.0614, 2023: 0.0479, 2024: 0.048}[self.year]
-        self.DeepJet_WP_M = {2015: 0.2598, 2016: 0.2489, 2017: 0.3040, 2018: 0.2783, 2021:0.3086, 2022: 0.3196, 2023: 0.2431, 2024: 0.2435}[self.year]
-        self.DeepJet_WP_T = {2015: 0.6502, 2016: 0.6377, 2017: 0.7476, 2018: 0.7100, 2021:0.7183, 2022: 0.7300, 2023: 0.6553, 2024: 0.6563}[self.year]
-
+        #check the pnet WP for 2024
         self.PNet_WP_M = {
             2015: 0,
             2016: 0,
@@ -134,32 +103,13 @@ class HeavyFlavBaseProducer(Module, object):
             2024: 0.1919
         }[self.year]
 
-        #self._modules = {
-            # 'flavTagSF': FlavTagSFProducer,
-            # 'electronSF': ElectronSFProducer,
-            # 'muonSF': MuonSFProducer,
-            #'puWeight': PileupWeightProducer,
-            #'nloWeight': NLOWeightProducer,
-            #'eventJetVeto': EventVetoMapProducer,
-            # 'topSystReweighter': TopSystReweightingProducer,
-        #} #if self._opts['runModules'] else {'eventJetVeto': EventVetoMapProducer}
-        #print("\n\n\n\n\n self._modules",self._modules)
-        #for k, cls in self._modules.items():
-        #    self._modules[k] = cls(self.year)#, fillSystWeights=self._opts['fillSystWeights'])
-
     def beginJob(self):
+        self.jetidcalc.beginJob()
+        self.fatjetidcalc.beginJob()
         if self._needsJMECorr:
             self.jetmetCorr.beginJob()
             self.fatjetCorr.beginJob()
             self.subjetCorr.beginJob()
-        #for mod in self._modules.values():
-        #    mod.beginJob()
-        if self._opts['sfbdt_threshold'] > -99:
-            self.xgb = XGBEnsemble(self._sfbdt_files, self._sfbdt_vars)
-
-    #def endJob(self):
-    #    for mod in self._modules.values():
-    #        mod.endJob()
 
     def beginFile(self, inputFile, outputFile, inputTree, wrappedOutputTree):
         self.isMC = bool(inputTree.GetBranch('genWeight'))
@@ -171,17 +121,6 @@ class HeavyFlavBaseProducer(Module, object):
         for f in os.listdir('.'):
             if f.endswith('.h5'):
                 os.remove(f)
-
-        if self._opts['run_tagger']:
-            for p in self.pnTaggers:
-                p.load_cache(inputFile)
-
-        if self._opts['run_mass_regression']:
-            for p in self.pnMassRegressions:
-                p.load_cache(inputFile)
-
-        if self._opts['run_tagger'] or self._opts['run_mass_regression']:
-            self.tagInfoMaker.init_file(inputFile, fetch_step=1000)
 
         self.out = wrappedOutputTree
 
@@ -210,7 +149,7 @@ class HeavyFlavBaseProducer(Module, object):
             prefix = 'fj_%d_' % idx
 
             # fatjet kinematics
-            self.out.branch(prefix + "is_qualified", "O")
+            #self.out.branch(prefix + "is_qualified", "O")
             self.out.branch(prefix + "pt", "F")
             self.out.branch(prefix + "eta", "F")
             self.out.branch(prefix + "phi", "F")
@@ -219,38 +158,7 @@ class HeavyFlavBaseProducer(Module, object):
             self.out.branch(prefix + "regressed_mass", "F")
             self.out.branch(prefix + "tau21", "F")
             self.out.branch(prefix + "tau32", "F")
-            #self.out.branch(prefix + "btagcsvv2", "F")
-            self.out.branch(prefix + "btagjp", "F")
-
-            # subjets
-            self.out.branch(prefix + "deltaR_sj12", "F")
-            self.out.branch(prefix + "sj1_pt", "F")
-            self.out.branch(prefix + "sj1_eta", "F")
-            self.out.branch(prefix + "sj1_phi", "F")
-            self.out.branch(prefix + "sj1_rawmass", "F")
-            self.out.branch(prefix + "sj1_btagdeepcsv", "F")
-            self.out.branch(prefix + "sj2_pt", "F")
-            self.out.branch(prefix + "sj2_eta", "F")
-            self.out.branch(prefix + "sj2_phi", "F")
-            self.out.branch(prefix + "sj2_rawmass", "F")
-            self.out.branch(prefix + "sj2_btagdeepcsv", "F")
-
-            # taggers
-            # self.out.branch(prefix + "DeepAK8_TvsQCD", "F")
-            # self.out.branch(prefix + "DeepAK8_WvsQCD", "F")
-            # self.out.branch(prefix + "DeepAK8_ZvsQCD", "F")
-            # self.out.branch(prefix + "DeepAK8_ZHbbvsQCD", "F")
-            # self.out.branch(prefix + "DeepAK8MD_TvsQCD", "F")
-            # self.out.branch(prefix + "DeepAK8MD_WvsQCD", "F")
-            # self.out.branch(prefix + "DeepAK8MD_ZvsQCD", "F")
-            # self.out.branch(prefix + "DeepAK8MD_ZHbbvsQCD", "F")
-            # self.out.branch(prefix + "DeepAK8MD_ZHccvsQCD", "F")
-            # self.out.branch(prefix + "DeepAK8MD_bbVsLight", "F")
-            # self.out.branch(prefix + "DeepAK8MD_bbVsTop", "F")
-
-            # self.out.branch(prefix + "ParticleNet_TvsQCD", "F")
-            # self.out.branch(prefix + "ParticleNet_WvsQCD", "F")
-            # self.out.branch(prefix + "ParticleNet_ZvsQCD", "F")
+            
             self.out.branch(prefix + "ParticleNetMD_Xbb", "F")
             self.out.branch(prefix + "ParticleNetMD_Xcc", "F")
             self.out.branch(prefix + "ParticleNetMD_Xqq", "F")
@@ -266,13 +174,6 @@ class HeavyFlavBaseProducer(Module, object):
             self.out.branch(prefix + "ParT_HccVsQCD", "F")
             self.out.branch(prefix + "ParT_TVsQCD", "F")
 
-            # Additional tagger scores from NanoAODv9
-            # self.out.branch(prefix + "DeepAK8MD_HbbvsQCD", "F")
-            # self.out.branch(prefix + "DeepAK8MD_H4qvsQCD", "F")
-            # self.out.branch(prefix + "DeepAK8MD_ccVsLight", "F")
-            # self.out.branch(prefix + "ParticleNet_HbbvsQCD", "F")
-            # self.out.branch(prefix + "ParticleNet_HccvsQCD", "F")
-            # self.out.branch(prefix + "ParticleNet_H4qvsQCD", "F")
             self.out.branch(prefix + "ParticleNet_mass", "F")
             self.out.branch(prefix + "btagDDBvLV2", "F")
             self.out.branch(prefix + "btagDDCvBV2", "F")
@@ -289,13 +190,6 @@ class HeavyFlavBaseProducer(Module, object):
                 self.out.branch(prefix + "nbhadrons", "I")
                 self.out.branch(prefix + "nchadrons", "I")
                 self.out.branch(prefix + "partonflavour", "I")
-                self.out.branch(prefix + "sj1_nbhadrons", "I")
-                self.out.branch(prefix + "sj1_nchadrons", "I")
-                self.out.branch(prefix + "sj1_partonflavour", "I")
-                self.out.branch(prefix + "sj2_nbhadrons", "I")
-                self.out.branch(prefix + "sj2_nchadrons", "I")
-                self.out.branch(prefix + "sj2_partonflavour", "I")
-
                 # info of the closest hadGenH
                 self.out.branch(prefix + "dr_H", "F")
                 self.out.branch(prefix + "dr_H_daus", "F")
@@ -322,77 +216,6 @@ class HeavyFlavBaseProducer(Module, object):
                 self.out.branch(prefix + "T_Wq_max_pdgId", "I")
                 self.out.branch(prefix + "T_Wq_min_pdgId", "I")
                 self.out.branch(prefix + "T_pt", "F")
-
-                # factors of JES/JER correction
-                if self._jmeSysts['jesr_extra_br']:
-                    self.out.branch(prefix + "jesUncFactorUp", "F")
-                    self.out.branch(prefix + "jesUncFactorDn", "F")
-                    self.out.branch(prefix + "jerSmearFactorUp", "F")
-                    self.out.branch(prefix + "jerSmearFactorDn", "F")
-
-            if self._fill_sv:
-                # SV variables
-                self.out.branch(prefix + "nsv", "I")
-                self.out.branch(prefix + "nsv_ptgt25", "I")
-                self.out.branch(prefix + "nsv_ptgt50", "I")
-                self.out.branch(prefix + "ntracks", "I")
-                self.out.branch(prefix + "ntracks_sv12", "I")
-
-                self.out.branch(prefix + "sj1_ntracks", "I")
-                self.out.branch(prefix + "sj1_nsv", "I")
-                self.out.branch(prefix + "sj1_sv1_pt", "F")
-                self.out.branch(prefix + "sj1_sv1_mass", "F")
-                self.out.branch(prefix + "sj1_sv1_masscor", "F")
-                self.out.branch(prefix + "sj1_sv1_ntracks", "I")
-                self.out.branch(prefix + "sj1_sv1_dxy", "F")
-                self.out.branch(prefix + "sj1_sv1_dxysig", "F")
-                self.out.branch(prefix + "sj1_sv1_dlen", "F")
-                self.out.branch(prefix + "sj1_sv1_dlensig", "F")
-                self.out.branch(prefix + "sj1_sv1_chi2ndof", "F")
-                self.out.branch(prefix + "sj1_sv1_pangle", "F")
-
-                self.out.branch(prefix + "sj2_ntracks", "I")
-                self.out.branch(prefix + "sj2_nsv", "I")
-                self.out.branch(prefix + "sj2_sv1_pt", "F")
-                self.out.branch(prefix + "sj2_sv1_mass", "F")
-                self.out.branch(prefix + "sj2_sv1_masscor", "F")
-                self.out.branch(prefix + "sj2_sv1_ntracks", "I")
-                self.out.branch(prefix + "sj2_sv1_dxy", "F")
-                self.out.branch(prefix + "sj2_sv1_dxysig", "F")
-                self.out.branch(prefix + "sj2_sv1_dlen", "F")
-                self.out.branch(prefix + "sj2_sv1_dlensig", "F")
-                self.out.branch(prefix + "sj2_sv1_chi2ndof", "F")
-                self.out.branch(prefix + "sj2_sv1_pangle", "F")
-
-                self.out.branch(prefix + "sj12_masscor_dxysig", "F")
-
-                # sfBDT
-                self.out.branch(prefix + "sfBDT", "F")
-
-                # bb/cc gen hadrons
-                if self.isMC and idx==(2 if self._channel == 'qcd' else 1) and self._channel != 'higgs':
-                    for hadtype in ['b', 'c']:
-                        for hadidx in [1, 2]:
-                            self.out.branch(prefix + "gen{}hadron{}_pt".format(hadtype, hadidx), "F")
-                            self.out.branch(prefix + "gen{}hadron{}_eta".format(hadtype, hadidx), "F")
-                            self.out.branch(prefix + "gen{}hadron{}_phi".format(hadtype, hadidx), "F")
-                            self.out.branch(prefix + "gen{}hadron{}_mass".format(hadtype, hadidx), "F")
-                            self.out.branch(prefix + "gen{}hadron{}_pdgId".format(hadtype, hadidx), "I")
-
-                # last parton list
-                if self.isMC and self._channel != 'higgs':
-                    for ptsuf in ['', '50']:
-                        self.out.branch(prefix + "npart{}".format(ptsuf), "I")
-                        self.out.branch(prefix + "nbpart{}".format(ptsuf), "I")
-                        self.out.branch(prefix + "ncpart{}".format(ptsuf), "I")
-                        self.out.branch(prefix + "ngpart{}".format(ptsuf), "I")
-                        self.out.branch(prefix + "part{}_sumpt".format(ptsuf), "F")
-                        self.out.branch(prefix + "bpart{}_sumpt".format(ptsuf), "F")
-                        self.out.branch(prefix + "cpart{}_sumpt".format(ptsuf), "F")
-                        self.out.branch(prefix + "gpart{}_sumpt".format(ptsuf), "F")
-
-        #for mod in self._modules.values():
-        #    mod.beginFile(inputFile, outputFile, inputTree, wrappedOutputTree)
  
 
     def endFile(self, inputFile, outputFile, inputTree, wrappedOutputTree):
@@ -421,14 +244,14 @@ class HeavyFlavBaseProducer(Module, object):
         electrons = Collection(event, "Electron")
         for el in electrons:
             el.etaSC = el.eta + el.deltaEtaSC
-            if el.pt > 10 and abs(el.eta) < 2.5 and abs(el.dxy) < 0.05 and abs(el.dz) < 0.2 \
-                    and el.mvaIso_WP90: #el.mvaFall17V2noIso_WP90 and el.miniPFRelIso_all < 0.4: #THESE ID IS NOT SAVED IN OUR CUSTOM NANOS
+            # follow the main analysis:
+            if el.pt > 20 and abs(el.eta) < 2.5 and el.mvaIso_WP90: #el.mvaFall17V2noIso_WP90 and el.miniPFRelIso_all < 0.4: #THESE ID IS NOT SAVED IN OUR CUSTOM NANOS
                 event.looseLeptons.append(el)
 
         muons = Collection(event, "Muon")
         for mu in muons:
-            if mu.pt > 10 and abs(mu.eta) < 2.4 and abs(mu.dxy) < 0.05 and abs(mu.dz) < 0.2 \
-                    and mu.looseId and mu.miniPFRelIso_all < 0.4:
+            # follow the main analysis, looseId :
+            if mu.pt > 20 and abs(mu.eta) < 2.4 and mu.looseId and mu.pfRelIso04_all < 0.25:
                 event.looseLeptons.append(mu)
 
         event.looseLeptons.sort(key=lambda x: x.pt, reverse=True)
@@ -436,16 +259,17 @@ class HeavyFlavBaseProducer(Module, object):
     def correctJetsAndMET(self, event):
         # correct Jets and MET
         event.idx = event._entry if event._tree._entrylist is None else event._tree._entrylist.GetEntry(event._entry)
+        event._allAK15jets = Collection(event, "AK15Puppi")
+        event._allAK8jets = Collection(event, "FatJet")        
         event._allJets = Collection(event, "Jet")
-        event.met = METObject(event, "MET")
-        event._allFatJets = Collection(event, self._fj_name)
-        event.subjets = Collection(event, self._sj_name)  # do not sort subjets after updating!!
+        event.ak15Subjets = Collection(event, "AK15PuppiSubJet")  # do not sort after updating!!
+        event.met = METObject(event, "PuppiMET")
+        event.trigobjs = Collection(event, "TrigObj")
 
-        # ## do some hack here... use uncorrected jet pT!
-        # for idx, j in enumerate(event._allFatJets):
-        #     j.rawP4 = polarP4(j) * (1. - j.rawFactor)
-        #     j.pt = j.rawP4.pt()
-        #     j.mass = j.rawP4.mass()
+        self.ak15patcher.CalculateMissingVars(event._allJets, event._allAK8jets, event._allAK15jets)
+        self.jetidcalc.CalculateJetId(event._allJets)
+        self.jetidcalc.CalculateJetId(event._allAK15jets) 
+
         if self._needsJMECorr:
             rho = getattr(event, self.rho_branch_name)
             #rho = event.fixedGridRhoFastjetAll
@@ -466,7 +290,7 @@ class HeavyFlavBaseProducer(Module, object):
             # correct subjets
             self.subjetCorr.setSeed(rndSeed(event, event.subjets))
             self.subjetCorr.correctJetAndMET(jets=event.subjets, met=None, rho=rho,
-                                             genjets=Collection(event, self._sj_gen_name) if self.isMC else None,
+                                             #genjets=Collection(event, self._sj_gen_name) if self.isMC else None,
                                              isMC=self.isMC, runNumber=event.run)
 
         # jet mass resolution smearing
@@ -476,7 +300,7 @@ class HeavyFlavBaseProducer(Module, object):
         # link fatjet to subjets and recompute softdrop mass
         for idx, fj in enumerate(event._allFatJets):
             fj.idx = idx
-            fj.is_qualified = True
+            #fj.is_qualified = True
             fj.subjets = get_subjets(fj, event.subjets, ('subJetIdx1', 'subJetIdx2'))
             fj.msoftdrop = sumP4(*fj.subjets).M()
         event._allFatJets = sorted(event._allFatJets, key=lambda x: x.pt, reverse=True)  # sort by pt
@@ -498,65 +322,7 @@ class HeavyFlavBaseProducer(Module, object):
             event.ht_jesUncFactorDn = sum([j.pt * j.jesUncFactorDn for j in event.ak4jets])
             event.ht_jerSmearFactorUp = sum([j.pt * j.jerSmearFactorUp for j in event.ak4jets])
             event.ht_jerSmearFactorDn = sum([j.pt * j.jerSmearFactorDn for j in event.ak4jets])
-
-    def selectSV(self, event):
-        event._allSV = Collection(event, "SV")
-        event.secondary_vertices = []
-        for sv in event._allSV:
-            # if sv.ntracks > 2 and abs(sv.dxy) < 3. and sv.dlenSig > 4:
-            # if sv.dlenSig > 4:
-            if True:
-                event.secondary_vertices.append(sv)
-        event.secondary_vertices = sorted(event.secondary_vertices, key=lambda x: x.pt, reverse=True)  # sort by pt
-        # event.secondary_vertices = sorted(event.secondary_vertices, key=lambda x : x.dxySig, reverse=True)  # sort by dxysig
-
-    def matchSVToFatJets(self, event, fatjets):
-        # match SV to fatjets
-        for fj in fatjets:
-            fj.sv_list = []
-            for sv in event.secondary_vertices:
-                if deltaR(sv, fj) < self._jetConeSize:
-                    fj.sv_list.append(sv)
-            # match SV to subjets
-            drcut = min(0.4, 0.5 * deltaR(*fj.subjets)) if len(fj.subjets) == 2 else 0.4
-            for sj in fj.subjets:
-                sj.sv_list = []
-                for sv in event.secondary_vertices:
-                    if deltaR(sv, sj) < drcut:
-                        sj.sv_list.append(sv)
-
-            fj.nsv_ptgt25 = 0
-            fj.nsv_ptgt50 = 0
-            fj.ntracks = 0
-            fj.ntracks_sv12 = 0
-            for isv, sv in enumerate(fj.sv_list):
-                fj.ntracks += sv.ntracks
-                if isv < 2:
-                    fj.ntracks_sv12 += sv.ntracks
-                if sv.pt > 25:
-                    fj.nsv_ptgt25 += 1
-                if sv.pt > 50:
-                    fj.nsv_ptgt50 += 1
-
-            # sfBDT & sj12_masscor_dxysig
-            fj.sfBDT = -1
-            fj.sj12_masscor_dxysig = 0
-            if len(fj.subjets) == 2:
-                sj1, sj2 = fj.subjets
-                if len(sj1.sv_list) > 0 and len(sj2.sv_list) > 0:
-                    sj1_sv, sj2_sv = sj1.sv_list[0], sj2.sv_list[0]
-                    sfbdt_inputs = {
-                        'fj_2_tau21': fj.tau2 / fj.tau1 if fj.tau1 > 0 else 99,
-                        'fj_2_sj1_rawmass': sj1.mass,
-                        'fj_2_sj2_rawmass': sj2.mass,
-                        'fj_2_ntracks_sv12': fj.ntracks_sv12,
-                        'fj_2_sj1_sv1_pt': sj1_sv.pt,
-                        'fj_2_sj2_sv1_pt': sj2_sv.pt,
-                    }
-                    if hasattr(self, 'xgb'):
-                        fj.sfBDT = self.xgb.eval(sfbdt_inputs, model_idx=(event.event % 10))
-                    fj.sj12_masscor_dxysig = corrected_svmass(sj1_sv if sj1_sv.dxySig > sj2_sv.dxySig else sj2_sv)
-
+    
     def loadGenHistory(self, event, fatjets):
         # gen matching
         if not self.isMC:
@@ -637,71 +403,7 @@ class HeavyFlavBaseProducer(Module, object):
             fj.genT, fj.dr_T = closest(fj, hadGenTops)
             fj.genLepT, fj.dr_LepT = closest(fj, lepGenTops)
 
-        if self._fill_sv and self._channel != 'higgs':
-            # bb/cc matching
-            # FIXME: only available for qcd & ggh(cc/bb) sample
-            probe_fj = event.fatjets[1 if self._channel == 'qcd' else 0]
-            probe_fj.genBhadron, probe_fj.genChadron = [], []
-            for gp in genparts:
-                if gp.pdgId in [5, -5] and gp.genPartIdxMother>=0 and genparts[gp.genPartIdxMother].pdgId in [21, 25] and deltaR(gp, probe_fj)<=self._jetConeSize:
-                    if len(probe_fj.genBhadron)==0 or (len(probe_fj.genBhadron)>0 and gp.genPartIdxMother==probe_fj.genBhadron[0].genPartIdxMother):
-                        probe_fj.genBhadron.append(gp)
-                if gp.pdgId in [4, -4] and gp.genPartIdxMother>=0 and genparts[gp.genPartIdxMother].pdgId in [21, 25] and deltaR(gp, probe_fj)<=self._jetConeSize:
-                    if len(probe_fj.genChadron)==0 or (len(probe_fj.genChadron)>0 and gp.genPartIdxMother==probe_fj.genChadron[0].genPartIdxMother):
-                        probe_fj.genChadron.append(gp)
-            probe_fj.genBhadron.sort(key=lambda x: x.pt, reverse=True)
-            probe_fj.genChadron.sort(key=lambda x: x.pt, reverse=True)
-            # null padding
-            probe_fj.genBhadron += [_NullObject() for _ in range(2-len(probe_fj.genBhadron))]
-            probe_fj.genChadron += [_NullObject() for _ in range(2-len(probe_fj.genChadron))]
-
-            # last parton information
-            for ifj in range(2 if self._channel == 'qcd' else 1):
-                fj = event.fatjets[ifj]
-                fj.npart, fj.nbpart, fj.ncpart, fj.ngpart, fj.part_sumpt, fj.bpart_sumpt, fj.cpart_sumpt, fj.gpart_sumpt = 0, 0, 0, 0, 0, 0, 0, 0
-                fj.npart50, fj.nbpart50, fj.ncpart50, fj.ngpart50, fj.part50_sumpt, fj.bpart50_sumpt, fj.cpart50_sumpt, fj.gpart50_sumpt = 0, 0, 0, 0, 0, 0, 0, 0
-                for gp in genparts:
-                    if gp.status>70 and gp.status<80 and (gp.statusFlags & (1 << 13)) and abs(gp.pdgId) in [1,2,3,4,5,6,21] and gp.pt>=5 and deltaR(gp, fj)<=self._jetConeSize:
-                        fj.npart += 1; fj.part_sumpt += gp.pt
-                        if gp.pdgId in [5, -5]:
-                            fj.nbpart += 1; fj.bpart_sumpt += gp.pt
-                        elif gp.pdgId in [4, -4]:
-                            fj.ncpart += 1; fj.cpart_sumpt += gp.pt
-                        elif gp.pdgId == 21:
-                            fj.ngpart += 1; fj.gpart_sumpt += gp.pt
-                        if gp.pt>=50:
-                            fj.npart50 += 1; fj.part50_sumpt += gp.pt
-                            if gp.pdgId in [5, -5]:
-                                fj.nbpart50 += 1; fj.bpart50_sumpt += gp.pt
-                            elif gp.pdgId in [4, -4]:
-                                fj.ncpart50 += 1; fj.cpart50_sumpt += gp.pt
-                            elif gp.pdgId == 21:
-                                fj.ngpart50 += 1; fj.gpart50_sumpt += gp.pt
-
-
-    def evalTagger(self, event, jets):
-        for j in jets:
-            if self._opts['run_tagger']:
-                outputs = [p.predict_with_cache(self.tagInfoMaker, event.idx, j.idx, j) for p in self.pnTaggers]
-                outputs = ensemble(outputs, np.mean)
-                j.pn_Xbb = outputs['probXbb']
-                j.pn_Xcc = outputs['probXcc']
-                j.pn_Xqq = outputs['probXqq']
-                #j.pn_QCD = convert_prob(outputs, None, prefix='prob')
-            else:
-                j.pn_Xbb = j.ParticleNetMD_probXbb
-                j.pn_Xcc = j.ParticleNetMD_probXcc
-                j.pn_Xqq = j.ParticleNetMD_probXqq
-                #j.pn_QCD = j.ParticleNetMD_probQCD
-            j.pn_XbbVsQCD = convert_prob(j, ['Xbb'], prefix='ParticleNetMD_prob')
-            j.pn_XccVsQCD = convert_prob(j, ['Xcc'], prefix='ParticleNetMD_prob')
-            j.pn_XccOrXqqVsQCD = convert_prob(j, ['Xcc', 'Xqq'], prefix='ParticleNetMD_prob')
-
-            #ParT
-            j.pt_Hbb = j.ParT_probHbb
-            j.pt_Hcc = j.ParT_probHcc
-            j.pt_Hqq = j.ParT_probHqq
-
+    #TODO: check which mass variable is used in the main analysis
     def evalMassRegression(self, event, jets):
         for j in jets:
             if self._opts['run_mass_regression']:
@@ -728,6 +430,7 @@ class HeavyFlavBaseProducer(Module, object):
             event.Flag_BadPFMuonDzFilter and
             event.Flag_eeBadScFilter
         )
+        # TODO: check which is used in the main analysis
         if self.year >= 2017:
             #if self.year in (2017, 2018):
             met_filters = met_filters and event.Flag_ecalBadCalibFilter
@@ -745,11 +448,6 @@ class HeavyFlavBaseProducer(Module, object):
 
         self.out.fillBranch("nlep", len(event.looseLeptons))
         self.out.fillBranch("ht", event.ht)
-        #if self.isMC and self._jmeSysts['jesr_extra_br']:
-        #    self.out.fillBranch("ht_jesUncFactorUp", event.ht_jesUncFactorUp)
-        #    self.out.fillBranch("ht_jesUncFactorDn", event.ht_jesUncFactorDn)
-        #    self.out.fillBranch("ht_jerSmearFactorUp", event.ht_jerSmearFactorUp)
-        #    self.out.fillBranch("ht_jerSmearFactorDn", event.ht_jerSmearFactorDn)
         self.out.fillBranch("met", event.met.pt)
         self.out.fillBranch("metphi", event.met.phi)
 
@@ -774,98 +472,25 @@ class HeavyFlavBaseProducer(Module, object):
             fj = fatjets[idx - 1]
 
             # fatjet kinematics
-            self.out.fillBranch(prefix + "is_qualified", fj.is_qualified)
+            #self.out.fillBranch(prefix + "is_qualified", fj.is_qualified)
             self.out.fillBranch(prefix + "pt", fj.pt)
             self.out.fillBranch(prefix + "eta", fj.eta)
             self.out.fillBranch(prefix + "phi", fj.phi)
             self.out.fillBranch(prefix + "rawmass", fj.mass)
             self.out.fillBranch(prefix + "sdmass", fj.msoftdrop)
             self.out.fillBranch(prefix + "regressed_mass", fj.regressed_mass)
-            self.out.fillBranch(prefix + "tau21", fj.tau2 / fj.tau1 if fj.tau1 > 0 else 99)
-            self.out.fillBranch(prefix + "tau32", fj.tau3 / fj.tau2 if fj.tau2 > 0 else 99)
-            #self.out.fillBranch(prefix + "btagcsvv2", fj.btagCSVV2)
+            #self.out.fillBranch(prefix + "tau21", fj.tau2 / fj.tau1 if fj.tau1 > 0 else 99)
+            #self.out.fillBranch(prefix + "tau32", fj.tau3 / fj.tau2 if fj.tau2 > 0 else 99)
             try:
-                self.out.fillBranch(prefix + "btagjp", fj.btagJP)
-            except RuntimeError:
-                self.out.fillBranch(prefix + "btagjp", -1)
-
-            # subjets
-            self.out.fillBranch(prefix + "deltaR_sj12", deltaR(*fj.subjets) if len(fj.subjets) == 2 else 99)
-            for idx_sj, sj in enumerate(fj.subjets):
-                prefix_sj = prefix + 'sj%d_' % (idx_sj + 1)
-                self.out.fillBranch(prefix_sj + "pt", sj.pt)
-                self.out.fillBranch(prefix_sj + "eta", sj.eta)
-                self.out.fillBranch(prefix_sj + "phi", sj.phi)
-                self.out.fillBranch(prefix_sj + "rawmass", sj.mass)
-                try:
-                    self.out.fillBranch(prefix_sj + "btagdeepcsv", sj.btagDeepB)
-                except RuntimeError:
-                    self.out.fillBranch(prefix_sj + "btagdeepcsv", -1)
-
-            # taggers
-            try:
-                # Full
-                # self.out.fillBranch(prefix + "DeepAK8_TvsQCD", fj.deepTag_TvsQCD)
-                # self.out.fillBranch(prefix + "DeepAK8_WvsQCD", fj.deepTag_WvsQCD)
-                # self.out.fillBranch(prefix + "DeepAK8_ZvsQCD", fj.deepTag_ZvsQCD)
-                # # MD
-                # self.out.fillBranch(prefix + "DeepAK8MD_TvsQCD", fj.deepTagMD_TvsQCD)
-                # self.out.fillBranch(prefix + "DeepAK8MD_WvsQCD", fj.deepTagMD_WvsQCD)
-                # self.out.fillBranch(prefix + "DeepAK8MD_ZvsQCD", fj.deepTagMD_ZvsQCD)
-                # self.out.fillBranch(prefix + "DeepAK8MD_ZHbbvsQCD", fj.deepTagMD_ZHbbvsQCD)
-                # self.out.fillBranch(prefix + "DeepAK8MD_ZHccvsQCD", fj.deepTagMD_ZHccvsQCD)
-                # self.out.fillBranch(prefix + "DeepAK8MD_bbVsLight", fj.deepTagMD_bbvsLight)
-                # try:
-                #     bbVsTop = (1 / (1 + (fj.deepTagMD_TvsQCD / fj.deepTagMD_HbbvsQCD) * (1 - fj.deepTagMD_HbbvsQCD) / (1 - fj.deepTagMD_TvsQCD)))  # noqa
-                # except ZeroDivisionError:
-                #     bbVsTop = 0
-                # self.out.fillBranch(prefix + "DeepAK8MD_bbVsTop", bbVsTop)
+                # need to be synchronized withh the main analysis
                 self.out.fillBranch(prefix + "ParT_HccVsQCD", convert_prob(fj, ['Hcc'], None, prefix='ParT_prob'))
                 self.out.fillBranch(prefix + "ParT_HbbVsQCD", convert_prob(fj, ['Hbb'], None, prefix='ParT_prob'))
                 self.out.fillBranch(prefix + "ParT_TVsQCD", convert_prob(fj, ['TopbWcs', 'TopbWqq', 'TopbWc', 'TopbWs', 'TopbWq','TopWcs', 'TopWqq'], None, prefix='ParT_prob'))
 
             except RuntimeError:
-                # if no DeepAK8 branches
-                # self.out.fillBranch(prefix + "DeepAK8_TvsQCD", -1)
-                # self.out.fillBranch(prefix + "DeepAK8_WvsQCD", -1)
-                # self.out.fillBranch(prefix + "DeepAK8_ZvsQCD", -1)
-                # self.out.fillBranch(prefix + "DeepAK8MD_TvsQCD", -1)
-                # self.out.fillBranch(prefix + "DeepAK8MD_WvsQCD", -1)
-                # self.out.fillBranch(prefix + "DeepAK8MD_ZvsQCD", -1)
-                # self.out.fillBranch(prefix + "DeepAK8MD_ZHbbvsQCD", -1)
-                # self.out.fillBranch(prefix + "DeepAK8MD_ZHccvsQCD", -1)
-                # self.out.fillBranch(prefix + "DeepAK8MD_bbVsLight", -1)
-                # self.out.fillBranch(prefix + "DeepAK8MD_bbVsTop", -1)
                 self.out.fillBranch(prefix + "ParT_HccVsQCD", -1)
                 self.out.fillBranch(prefix + "ParT_HbbVsQCD", -1)
                 self.out.fillBranch(prefix + "ParT_TopVsQCD", -1)
-
-            #try:
-            #    self.out.fillBranch(prefix + "DeepAK8_ZHbbvsQCD",
-            #                        convert_prob(fj, ['Zbb', 'Hbb'], prefix='deepTag_prob'))
-            #except RuntimeError:
-            #    # if no DeepAK8 raw probs
-            #    self.out.fillBranch(prefix + "DeepAK8_ZHbbvsQCD", -1)
-
-            # ParticleNet
-            # if self.hasParticleNetProb:
-            #     self.out.fillBranch(prefix + "ParticleNet_TvsQCD",
-            #                         convert_prob(fj, ['Tbcq', 'Tbqq'], prefix='ParticleNet_prob'))
-            #     self.out.fillBranch(prefix + "ParticleNet_WvsQCD",
-            #                         convert_prob(fj, ['Wcq', 'Wqq'], prefix='ParticleNet_prob'))
-            #     self.out.fillBranch(prefix + "ParticleNet_ZvsQCD",
-            #                         convert_prob(fj, ['Zbb', 'Zcc', 'Zqq'], prefix='ParticleNet_prob'))
-            # else:
-            #     try:
-            #         # nominal ParticleNet from official NanoAOD
-            #         self.out.fillBranch(prefix + "ParticleNet_TvsQCD", fj.particleNet_TvsQCD)
-            #         self.out.fillBranch(prefix + "ParticleNet_WvsQCD", fj.particleNet_WvsQCD)
-            #         self.out.fillBranch(prefix + "ParticleNet_ZvsQCD", fj.particleNet_ZvsQCD)
-            #     except RuntimeError:
-            #         # if no nominal ParticleNet
-            #         self.out.fillBranch(prefix + "ParticleNet_TvsQCD", -1)
-            #         self.out.fillBranch(prefix + "ParticleNet_WvsQCD", -1)
-            #         self.out.fillBranch(prefix + "ParticleNet_ZvsQCD", -1)
 
             # ParticleNet-MD
             self.out.fillBranch(prefix + "ParticleNetMD_Xbb", fj.pn_Xbb)
@@ -887,23 +512,6 @@ class HeavyFlavBaseProducer(Module, object):
                 self.out.fillBranch(prefix + "origParticleNetMD_XbbVsQCD",
                                     convert_prob(fj, ['Xbb'], None, prefix='ParticleNetMD_prob'))
 
-            # Additional tagger scores from NanoAODv9
-            # try:
-            #     self.out.fillBranch(prefix + "DeepAK8MD_HbbvsQCD", fj.deepTagMD_HbbvsQCD)
-            #     self.out.fillBranch(prefix + "DeepAK8MD_H4qvsQCD", fj.deepTagMD_H4qvsQCD)
-            #     self.out.fillBranch(prefix + "DeepAK8MD_ccVsLight", fj.deepTagMD_ccvsLight)
-            # except RuntimeError:
-            #     self.out.fillBranch(prefix + "DeepAK8MD_HbbvsQCD", -1)
-            #     self.out.fillBranch(prefix + "DeepAK8MD_H4qvsQCD", -1)
-            #     self.out.fillBranch(prefix + "DeepAK8MD_ccVsLight", -1)
-            # try:
-            #     self.out.fillBranch(prefix + "ParticleNet_HbbvsQCD", fj.particleNet_HbbvsQCD)
-            #     self.out.fillBranch(prefix + "ParticleNet_HccvsQCD", fj.particleNet_HccvsQCD)
-            #     self.out.fillBranch(prefix + "ParticleNet_H4qvsQCD", fj.particleNet_H4qvsQCD)
-            # except RuntimeError:
-            #     self.out.fillBranch(prefix + "ParticleNet_HbbvsQCD", -1)
-            #     self.out.fillBranch(prefix + "ParticleNet_HccvsQCD", -1)
-            #     self.out.fillBranch(prefix + "ParticleNet_H4qvsQCD", -1)
             try:
                 self.out.fillBranch(prefix + "ParticleNet_mass", fj.particleNet_mass)
             except RuntimeError:
@@ -923,29 +531,6 @@ class HeavyFlavBaseProducer(Module, object):
 
             # matching variables
             if self.isMC:
-                try:
-                    sj1 = fj.subjets[0]
-                except IndexError:
-                    sj1 = None
-                try:
-                    sj2 = fj.subjets[1]
-                except IndexError:
-                    sj2 = None
-
-                self.out.fillBranch(prefix + "nbhadrons", fj.nBHadrons)
-                self.out.fillBranch(prefix + "nchadrons", fj.nCHadrons)
-                self.out.fillBranch(prefix + "sj1_nbhadrons", sj1.nBHadrons if sj1 else -1)
-                self.out.fillBranch(prefix + "sj1_nchadrons", sj1.nCHadrons if sj1 else -1)
-                self.out.fillBranch(prefix + "sj2_nbhadrons", sj2.nBHadrons if sj2 else -1)
-                self.out.fillBranch(prefix + "sj2_nchadrons", sj2.nCHadrons if sj2 else -1)
-                try:
-                    self.out.fillBranch(prefix + "partonflavour", fj.partonFlavour)
-                    self.out.fillBranch(prefix + "sj1_partonflavour", sj1.partonFlavour if sj1 else -1)
-                    self.out.fillBranch(prefix + "sj2_partonflavour", sj2.partonFlavour if sj2 else -1)
-                except RuntimeError:
-                    self.out.fillBranch(prefix + "partonflavour", -1)
-                    self.out.fillBranch(prefix + "sj1_partonflavour", -1)
-                    self.out.fillBranch(prefix + "sj2_partonflavour", -1)
 
                 # info of the closest hadGenH
                 self.out.fillBranch(prefix + "dr_H", fj.dr_H)
@@ -987,44 +572,6 @@ class HeavyFlavBaseProducer(Module, object):
                     self.out.fillBranch(prefix + "jesUncFactorDn", fj.jesUncFactorDn)
                     self.out.fillBranch(prefix + "jerSmearFactorUp", fj.jerSmearFactorUp)
                     self.out.fillBranch(prefix + "jerSmearFactorDn", fj.jerSmearFactorDn)
-
-            if self._fill_sv:
-                # SV variables
-                self.out.fillBranch(prefix + "nsv", len(fj.sv_list))
-                self.out.fillBranch(prefix + "nsv_ptgt25", fj.nsv_ptgt25)
-                self.out.fillBranch(prefix + "nsv_ptgt50", fj.nsv_ptgt50)
-                self.out.fillBranch(prefix + "ntracks", fj.ntracks)
-                self.out.fillBranch(prefix + "ntracks_sv12", fj.ntracks_sv12)
-
-                for idx_sj in (0, 1):
-                    prefix_sj = prefix + 'sj%d_' % (idx_sj + 1)
-                    try:
-                        sj = fj.subjets[idx_sj]
-                    except IndexError:
-                        # fill zeros if not enough subjets
-                        for b in self.out._branches.keys():
-                            if b.startswith(prefix_sj):
-                                self.out.fillBranch(b, 0)
-                        continue
-
-                    self.out.fillBranch(prefix_sj + "ntracks", sum([sv.ntracks for sv in sj.sv_list]))
-                    self.out.fillBranch(prefix_sj + "nsv", len(sj.sv_list))
-                    sv = sj.sv_list[0] if len(sj.sv_list) else _NullObject()
-                    fill_sv = self._get_filler(sv)  # wrapper, fill default value if sv=None
-                    fill_sv(prefix_sj + "sv1_pt", sv.pt)
-                    fill_sv(prefix_sj + "sv1_mass", sv.mass)
-                    fill_sv(prefix_sj + "sv1_masscor", corrected_svmass(sv) if sv else 0)
-                    fill_sv(prefix_sj + "sv1_ntracks", sv.ntracks)
-                    fill_sv(prefix_sj + "sv1_dxy", sv.dxy)
-                    fill_sv(prefix_sj + "sv1_dxysig", sv.dxySig)
-                    fill_sv(prefix_sj + "sv1_dlen", sv.dlen)
-                    fill_sv(prefix_sj + "sv1_dlensig", sv.dlenSig)
-                    fill_sv(prefix_sj + "sv1_chi2ndof", sv.chi2)
-                    fill_sv(prefix_sj + "sv1_pangle", sv.pAngle)
-                self.out.fillBranch(prefix + "sj12_masscor_dxysig", fj.sj12_masscor_dxysig)
-
-                # sfBDT
-                self.out.fillBranch(prefix + "sfBDT", fj.sfBDT)
 
                 if self.isMC and idx==(2 if self._channel == 'qcd' else 1) and self._channel != 'higgs':
                     for hadtype in ['b', 'c']:

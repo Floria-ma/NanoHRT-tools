@@ -15,7 +15,7 @@ default_config = {'sfbdt_threshold': -99,
                   'run_mass_regression': False, 'mass_regression_versions': ['V01a', 'V01b', 'V01c'],
                   'jec': False, 'jes': None, 'jes_source': '', 'jes_uncertainty_file_prefix': '',
                   'jer': 'nominal', 'jmr': None, 'met_unclustered': None, 'smearMET': False, 'applyHEMUnc': False,
-                  'jesr_extra_br': False}
+                  'jesr_extra_br': False,'nanoV15':False}
 
 cut_dict_ak8 = {
     'photon': 'Sum$(Photon_pt>200 && Photon_cutBased>=2 && Photon_electronVeto)>0 && nFatJet>0',
@@ -50,6 +50,7 @@ golden_json = {
 
 def _process(args):
     default_config['jetType'] = args.jet_type
+    default_config['nanoV15'] = args.nanoV15
     if args.run_tagger:
         default_config['run_tagger'] = True
         if args.jet_type == 'ak8':
@@ -221,6 +222,9 @@ def main():
                         nargs=2, action='append', default=[],
                         help='options to pass to the producer, e.g., `--po apply_tight_selection False`')
 
+    parser.add_argument('--nanoV15', action='store_true', default=False, 
+                        help='Setup code to run on NanoAOD v15 (missing/renamed branches)')
+
     args = parser.parse_args()
 
     if not (args.post or args.add_weight or args.merge):
@@ -236,6 +240,9 @@ def main():
         default_config.update(producer_options)
 
     for year in years:
+        if year in ["2024","2025","2026"] and (not args.nanoV15):
+            input("NOTE: for this year we would expect nanoV15 but the flag '--nanoV15' was not provided. Press any key to continue")
+
         for chn in channels:
             for cat in categories:
                 opts = copy.deepcopy(args)
