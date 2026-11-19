@@ -42,7 +42,8 @@ def get_filenames(dataset, retry=3):
     cmd = ['dasgoclient', '-query', query, '-json']
     retry_count = 0
     while True:
-        logging.info('Querying DAS:\n  %s' % ' '.join(cmd) + '' if retry_count == 0 else '\n... retry %d ...' % retry_count)
+        logging.info('Querying DAS:\n  %s' % ' '.join(cmd) + '' if retry_count ==
+                     0 else '\n... retry %d ...' % retry_count)
         if retry_count > 0:
             time.sleep(3)
         retry_count += 1

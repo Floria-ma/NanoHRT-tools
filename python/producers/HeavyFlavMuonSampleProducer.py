@@ -145,6 +145,7 @@ class MuonSampleProducer(HeavyFlavBaseProducer):
                             abs(deltaPhi(j, event.mu)) < 2]
 
         else:
+            # what's the PNet MP working point for 2024?
             event.bjets = [j for j in event.ak4jets if j.btagPNetB > self.PNet_WP_M and
                         abs(deltaPhi(j, event.mu)) < 2]        
         
@@ -166,7 +167,9 @@ class MuonSampleProducer(HeavyFlavBaseProducer):
         self.fillFatJetInfo(event, probe_jets)
 
         # fill
-        self.out.fillBranch("passMuTrig", passTrigger(event, ['HLT_Mu50', 'HLT_TkMu50']))
+        # v15 Nano doesn't have HLT_TkMu50 
+        #self.out.fillBranch("passMuTrig", passTrigger(event, ['HLT_Mu50', 'HLT_TkMu50']))
+        self.out.fillBranch("passMuTrig", passTrigger(event, ['HLT_Mu50']))
         self.out.fillBranch("muon_pt", event.mu.pt)
         self.out.fillBranch("muon_eta", event.mu.eta)
         self.out.fillBranch("muon_miniIso", event.mu.miniPFRelIso_all)
