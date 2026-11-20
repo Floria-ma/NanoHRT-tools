@@ -7,10 +7,11 @@ ROOT.PyConfig.IgnoreCommandLineOptions = True
 from PhysicsTools.NanoAODTools.postprocessing.framework.datamodel import Collection, Object
 from PhysicsTools.NanoAODTools.postprocessing.framework.eventloop import Module
 
-from ..helpers.utils import deltaR, closest, polarP4, sumP4, get_subjets, corrected_svmass, configLogger
-from ..helpers.xgbHelper import XGBEnsemble
-from ..helpers.nnHelper import convert_prob, ensemble
+from ..helpers.utils import deltaR, closest, polarP4, sumP4, get_subjets, configLogger
+from ..helpers.nnHelper import convert_prob
 from ..helpers.jetmetCorrector import JetMETCorrector, rndSeed, JetIdCalculator, AK15patcher
+from .leptonSFProducer import MuonSFProducer
+from .puWeightProducer import PileupWeightProducer
 from .EventVetoMapProducer import EventVetoMapProducer
 
 import logging
@@ -44,64 +45,61 @@ class METObject(Object):
 class HeavyFlavBaseProducer(Module, object):
 
     def __init__(self, channel, **kwargs):
-        self._channel = channel  # 'qcd', 'photon', 'inclusive', 'muon'
+        self._channel = channel  # 'muon'
         self.year = int(kwargs['year'])
         self.jetType = kwargs.get('jetType', 'ak15').lower()
         self._jmeSysts = {'jec': False, 'jes': None, 'jes_source': '', 'jes_uncertainty_file_prefix': '',
-                          'jer': None, 'jmr': None, 'met_unclustered': None, 'smearMET': True, 'applyHEMUnc': False,
-                          'jesr_extra_br': True}
-        self._opts = {'sfbdt_threshold': -99,
-                      'run_tagger': False, 'tagger_versions': ['V02b', 'V02c', 'V02d'],
-                      'run_mass_regression': False, 'mass_regression_versions': ['V01a', 'V01b', 'V01c'],
-                      'WRITE_CACHE_FILE': False}
+                          'jer': 'nominal', 'met_unclustered': None, 'applyHEMUnc': False,
+                          'smearMET': False}
+        self._opts = {'fillSystWeights': True, 'nanoV15': False}
         for k in kwargs:
             if k in self._jmeSysts:
                 self._jmeSysts[k] = kwargs[k]
             else:
                 self._opts[k] = kwargs[k]
         self._needsJMECorr = any([self._jmeSysts['jec'], self._jmeSysts['jes'],
-                                  self._jmeSysts['jer'], self._jmeSysts['jmr'],
+                                  self._jmeSysts['jer'],
                                   self._jmeSysts['met_unclustered'], self._jmeSysts['applyHEMUnc']])
         self._doJetCleaning = True
 
         logger.info('Running %s channel for %s jets with JME systematics %s, other options %s',
                     self._channel, self.jetType, str(self._jmeSysts), str(self._opts))
-        
-        if self.jetType == 'ak8':
-            self._jetConeSize = 0.8
-            self._fj_name = 'FatJet'
-            #self._sj_name = 'SubJet'
-            self._fj_gen_name = 'GenJetAK8'
-        elif self.jetType == 'ak15':
-            self._jetConeSize = 1.5
-            self._fj_name = 'AK15Puppi'
-            #self._sj_name = 'AK15PuppiSubJet'
-            self._fj_gen_name = 'GenJetAK15'
-        else:
-            raise RuntimeError('Jet type %s is not recognized!' % self.jetType)
 
-        self._fill_sv = self._channel in ('qcd', 'photon', 'higgs', 'inclusive') and self._opts['sfbdt_threshold'] > -99
-        
-        self.jetidcalc = JetIdCalculator(year=self._year, jetType="AK4PUPPI")
-        self.fatjetidcalc = JetIdCalculator(year=self._year, jetType="AK8PUPPI") # does not work because some branches are missing
-        self.ak15patcher = AK15patcher(year=self._year)
+        if self.jetType != 'ak15':
+            raise RuntimeError('Jet type %s is not supported (only ak15)!' % self.jetType)
+        self._jetConeSize = 1.5
+        self._fj_name = 'AK15Puppi'
+        self._fj_gen_name = 'GenJetAK15'
+
+        self.jetidcalc = JetIdCalculator(year=self.year, jetType="AK4PUPPI", nanov15=self._opts['nanoV15'])
+        self.fatjetidcalc = JetIdCalculator(year=self.year, jetType="AK8PUPPI", nanov15=self._opts['nanoV15'])
+        self.ak15patcher = AK15patcher(year=self.year)
 
         if self._needsJMECorr:
-            self.jetmetCorr = JetMETCorrector(year=self.year, jetType="AK4PFchs", **self._jmeSysts)
+            self.jetmetCorr = JetMETCorrector(year=self.year, jetType="AK4PFPuppi", **self._jmeSysts)
             self.fatjetCorr = JetMETCorrector(year=self.year, jetType="AK8PFPuppi", **self._jmeSysts)
             self.subjetCorr = JetMETCorrector(year=self.year, jetType="AK4PFPuppi", **self._jmeSysts)
 
-        #check the pnet WP for 2024
-        self.PNet_WP_M = {
-            2015: 0,
-            2016: 0,
-            2017: 0,
-            2018: 0,
-            2021: 0.245,
-            2022: 0.2605,
-            2023: 0.1917,
-            2024: 0.1919
+        # AK4 b-tagging, medium WP
+        # NanoAODv15 (2024) has no PNet b-tag for AK4 jets: use UParTAK4 (BTV Summer24 json, M = 0.1272)
+        self.btag_name, self.btag_WP_M = {
+            2021: ('btagPNetB', 0.245),
+            2022: ('btagPNetB', 0.2605),
+            2023: ('btagPNetB', 0.1917),
+            2024: ('btagUParTAK4B', 0.1272),
         }[self.year]
+
+        # same modules as in NanoTrees vhTreeProducer, 1L channel; the muon iso SF matches miniIso < 0.10
+        # no trigger SF (as in the original HRT muon channel: HLT_Mu50 is only stored as passMuTrig)
+        self._modules = {
+            'muonSF': MuonSFProducer,
+            'puWeight': PileupWeightProducer,
+            'eventJetVeto': EventVetoMapProducer,
+        }
+        for k, cls in self._modules.items():
+            self._modules[k] = cls(self.year, fillSystWeights=self._opts['fillSystWeights'])
+        self._modules['muonSF'].SetIDWP('Tight')
+        self._modules['muonSF'].SetIsoWP('TightMini')
 
     def beginJob(self):
         self.jetidcalc.beginJob()
@@ -110,17 +108,17 @@ class HeavyFlavBaseProducer(Module, object):
             self.jetmetCorr.beginJob()
             self.fatjetCorr.beginJob()
             self.subjetCorr.beginJob()
+        for mod in self._modules.values():
+            mod.beginJob()
+
+    def endJob(self):
+        for mod in self._modules.values():
+            mod.endJob()
 
     def beginFile(self, inputFile, outputFile, inputTree, wrappedOutputTree):
         self.isMC = bool(inputTree.GetBranch('genWeight'))
         self.rho_branch_name = 'Rho_fixedGridRhoFastjetAll' if bool(
             inputTree.GetBranch('Rho_fixedGridRhoFastjetAll')) else 'fixedGridRhoFastjetAll'
-        #self.hasParticleNetProb = bool(inputTree.GetBranch(self._fj_name + '_ParticleNet_probHbb'))
-
-        # remove all possible h5 cache files
-        for f in os.listdir('.'):
-            if f.endswith('.h5'):
-                os.remove(f)
 
         self.out = wrappedOutputTree
 
@@ -139,51 +137,44 @@ class HeavyFlavBaseProducer(Module, object):
         self.out.branch("metphi", "F")
 
         # Large-R jets
-        for idx in ([1, 2] if self._channel in ['qcd', 'mutagged'] else [1]):
+        for idx in [1]:
             prefix = 'fj_%d_' % idx
 
             # fatjet kinematics
-            #self.out.branch(prefix + "is_qualified", "O")
             self.out.branch(prefix + "pt", "F")
             self.out.branch(prefix + "eta", "F")
             self.out.branch(prefix + "phi", "F")
             self.out.branch(prefix + "rawmass", "F")
-            self.out.branch(prefix + "sdmass", "F")
-            self.out.branch(prefix + "regressed_mass", "F")
             self.out.branch(prefix + "tau21", "F")
             self.out.branch(prefix + "tau32", "F")
-            
+            self.out.branch(prefix + "nsubjets", "I")
+
+            # masses, same definitions as in NanoTrees vhTreeProducer
+            self.out.branch(prefix + "sdmass", "F")
+            self.out.branch(prefix + "regressed_mass", "F")
+            self.out.branch(prefix + "ParT_resonanceMass", "F")
+            self.out.branch(prefix + "ParT_genericMass", "F")
+            self.out.branch(prefix + "ParT_X2pMass", "F")
+
             self.out.branch(prefix + "ParticleNetMD_Xbb", "F")
             self.out.branch(prefix + "ParticleNetMD_Xcc", "F")
             self.out.branch(prefix + "ParticleNetMD_Xqq", "F")
-            #self.out.branch(prefix + "ParticleNetMD_QCD", "F")
+            self.out.branch(prefix + "ParticleNetMD_QCD", "F")
             self.out.branch(prefix + "ParticleNetMD_XbbVsQCD", "F")
             self.out.branch(prefix + "ParticleNetMD_XccVsQCD", "F")
             self.out.branch(prefix + "ParticleNetMD_XccOrXqqVsQCD", "F")
 
-            self.out.branch(prefix + "ParT_Hbb", "F")
-            self.out.branch(prefix + "ParT_Hcc", "F")
-            self.out.branch(prefix + "ParT_Hqq", "F")
             self.out.branch(prefix + "ParT_HbbVsQCD", "F")
             self.out.branch(prefix + "ParT_HccVsQCD", "F")
             self.out.branch(prefix + "ParT_TVsQCD", "F")
-
-            self.out.branch(prefix + "ParticleNet_mass", "F")
-            self.out.branch(prefix + "btagDDBvLV2", "F")
-            self.out.branch(prefix + "btagDDCvBV2", "F")
-            self.out.branch(prefix + "btagDDCvLV2", "F")
-            self.out.branch(prefix + "btagDeepB", "F")
-            self.out.branch(prefix + "btagHbb", "F")
-
-            if self._opts['run_tagger']:
-                self.out.branch(prefix + "origParticleNetMD_XccVsQCD", "F")
-                self.out.branch(prefix + "origParticleNetMD_XbbVsQCD", "F")
+            self.out.branch(prefix + "ParT_QCD", "F")
+            for score in self._part_scores:
+                self.out.branch(prefix + "ParT_" + score, "F")
 
             # matching variables
             if self.isMC:
                 self.out.branch(prefix + "nbhadrons", "I")
                 self.out.branch(prefix + "nchadrons", "I")
-                self.out.branch(prefix + "partonflavour", "I")
                 # info of the closest hadGenH
                 self.out.branch(prefix + "dr_H", "F")
                 self.out.branch(prefix + "dr_H_daus", "F")
@@ -210,26 +201,16 @@ class HeavyFlavBaseProducer(Module, object):
                 self.out.branch(prefix + "T_Wq_max_pdgId", "I")
                 self.out.branch(prefix + "T_Wq_min_pdgId", "I")
                 self.out.branch(prefix + "T_pt", "F")
- 
+
+        for mod in self._modules.values():
+            mod.beginFile(inputFile, outputFile, inputTree, wrappedOutputTree)
 
     def endFile(self, inputFile, outputFile, inputTree, wrappedOutputTree):
-        
-        #for mod in self._modules.values():
-        #    mod.endFile(inputFile, outputFile, inputTree, wrappedOutputTree)
-        
-        if self._opts['run_tagger'] and self._opts['WRITE_CACHE_FILE']:
-            for p in self.pnTaggers:
-                p.update_cache()
+        for mod in self._modules.values():
+            mod.endFile(inputFile, outputFile, inputTree, wrappedOutputTree)
 
-        if self._opts['run_mass_regression'] and self._opts['WRITE_CACHE_FILE']:
-            for p in self.pnMassRegressions:
-                p.update_cache()
-
-        # remove all h5 cache files
-        if self._opts['run_tagger'] or self._opts['run_mass_regression']:
-            for f in os.listdir('.'):
-                if f.endswith('.h5'):
-                    os.remove(f)
+    # ParTv3 raw scores stored in the output (NanoAODv15 names)
+    _part_scores = ['Xbb', 'Xcc', 'Xcs', 'Xqq', 'TopbWqq', 'TopbWq']
 
     def selectLeptons(self, event):
         # do lepton selection
@@ -239,7 +220,7 @@ class HeavyFlavBaseProducer(Module, object):
         for el in electrons:
             el.etaSC = el.eta + el.deltaEtaSC
             # follow the main analysis:
-            if el.pt > 20 and abs(el.eta) < 2.5 and el.mvaIso_WP90: #el.mvaFall17V2noIso_WP90 and el.miniPFRelIso_all < 0.4: #THESE ID IS NOT SAVED IN OUR CUSTOM NANOS
+            if el.pt > 20 and abs(el.eta) < 2.5 and el.mvaIso_WP90:
                 event.looseLeptons.append(el)
 
         muons = Collection(event, "Muon")
@@ -251,67 +232,66 @@ class HeavyFlavBaseProducer(Module, object):
         event.looseLeptons.sort(key=lambda x: x.pt, reverse=True)
 
     def correctJetsAndMET(self, event):
-        # correct Jets and MET
+        # same as NanoTrees vhTreeProducer: analyze() + _correctJetAndMET()
         event.idx = event._entry if event._tree._entrylist is None else event._tree._entrylist.GetEntry(event._entry)
         event._allAK15jets = Collection(event, "AK15Puppi")
-        event._allAK8jets = Collection(event, "FatJet")        
+        event._allAK8jets = Collection(event, "FatJet")
         event._allJets = Collection(event, "Jet")
         event.ak15Subjets = Collection(event, "AK15PuppiSubJet")  # do not sort after updating!!
         event.met = METObject(event, "PuppiMET")
-        event.trigobjs = Collection(event, "TrigObj")
 
         self.ak15patcher.CalculateMissingVars(event._allJets, event._allAK8jets, event._allAK15jets)
         self.jetidcalc.CalculateJetId(event._allJets)
-        self.jetidcalc.CalculateJetId(event._allAK15jets) 
+        self.fatjetidcalc.CalculateJetId(event._allAK15jets)
 
         if self._needsJMECorr:
             rho = getattr(event, self.rho_branch_name)
-            #rho = event.fixedGridRhoFastjetAll
             # correct AK4 jets and MET
             self.jetmetCorr.setSeed(rndSeed(event, event._allJets))
-            self.jetmetCorr.correctJetAndMET(jets=event._allJets, lowPtJets=Collection(event, "CorrT1METJet"),
-                                             met=event.met, rawMET=METObject(event, "RawMET"),
-                                             defaultMET=METObject(event, "MET"),
-                                             rho=rho, genjets=Collection(event, 'GenJet') if self.isMC else None,
-                                             isMC=self.isMC, runNumber=event.run)
+            self.jetmetCorr.correctJetAndMET(
+                jets=event._allJets,
+                lowPtJets=Collection(event, "CorrT1METJet"),
+                met=event.met,
+                rawMET=METObject(event, "RawPuppiMET"),
+                rho=rho, genjets=Collection(event, 'GenJet') if self.isMC else None,
+                isMC=self.isMC, runNumber=event.run)
             event._allJets = sorted(event._allJets, key=lambda x: x.pt, reverse=True)  # sort by pt after updating
-
-            # correct fatjets
-            self.fatjetCorr.setSeed(rndSeed(event, event._allFatJets))
-            self.fatjetCorr.correctJetAndMET(jets=event._allFatJets, met=None, rho=rho,
-                                             genjets=Collection(event, self._fj_gen_name) if self.isMC else None,
+            # correct AK15 fatjets
+            self.fatjetCorr.setSeed(rndSeed(event, event._allAK15jets))
+            self.fatjetCorr.correctJetAndMET(jets=event._allAK15jets, met=None, rho=rho,
+                                             genjets=Collection(event, 'GenJetAK15') if self.isMC else None,
+                                             isMC=self.isMC, runNumber=event.run)
+            # correct AK15 subjets: do not sort after updating!!
+            self.subjetCorr.setSeed(rndSeed(event, event.ak15Subjets))
+            self.subjetCorr.correctJetAndMET(jets=event.ak15Subjets, met=None, rho=rho,
+                                             genjets=Collection(event, 'GenSubJetAK15') if self.isMC else None,
                                              isMC=self.isMC, runNumber=event.run)
 
-        # jet mass resolution smearing
-        if self.isMC and self._jmeSysts['jmr']:
-            raise NotImplementedError
-
-        # link fatjet to subjets and recompute softdrop mass
-        for idx, fj in enumerate(event._allFatJets):
+        # link fatjet to (updated) subjets and recompute softdrop mass
+        for idx, fj in enumerate(event._allAK15jets):
             fj.idx = idx
-            #fj.is_qualified = True
-            fj.subjets = get_subjets(fj, event.subjets, ('subJetIdx1', 'subJetIdx2'))
+            fj.subjets = get_subjets(fj, event.ak15Subjets, ('subJetIdx1', 'subJetIdx2'))
             fj.msoftdrop = sumP4(*fj.subjets).M()
-        event._allFatJets = sorted(event._allFatJets, key=lambda x: x.pt, reverse=True)  # sort by pt
+        event._allAK15jets = sorted(event._allAK15jets, key=lambda x: x.pt, reverse=True)  # sort by pt
 
         # select lepton-cleaned jets
         if self._doJetCleaning:
-            event.fatjets = [fj for fj in event._allFatJets if fj.pt > 200 and abs(fj.eta) < 2.4 and (
+            event.fatjets = [fj for fj in event._allAK15jets if fj.pt > 200 and abs(fj.eta) < 2.4 and (
                 fj.jetId & 2) and closest(fj, event.looseLeptons)[1] >= self._jetConeSize]
             event.ak4jets = [j for j in event._allJets if j.pt > 25 and abs(j.eta) < 2.4 and (
                 j.jetId & 4) and closest(j, event.looseLeptons)[1] >= 0.4]
         else:
-            event.fatjets = [fj for fj in event._allFatJets if fj.pt > 200 and abs(fj.eta) < 2.4 and (
+            event.fatjets = [fj for fj in event._allAK15jets if fj.pt > 200 and abs(fj.eta) < 2.4 and (
                 fj.jetId & 2)]
             event.ak4jets = [j for j in event._allJets if j.pt > 25 and abs(j.eta) < 2.4 and (
                 j.jetId & 4)]
         event.ht = sum([j.pt for j in event.ak4jets])
-        if self.isMC and self._jmeSysts['jesr_extra_br']:
-            event.ht_jesUncFactorUp = sum([j.pt * j.jesUncFactorUp for j in event.ak4jets])
-            event.ht_jesUncFactorDn = sum([j.pt * j.jesUncFactorDn for j in event.ak4jets])
-            event.ht_jerSmearFactorUp = sum([j.pt * j.jerSmearFactorUp for j in event.ak4jets])
-            event.ht_jerSmearFactorDn = sum([j.pt * j.jerSmearFactorDn for j in event.ak4jets])
-    
+
+    def runModules(self, event):
+        # needs event.selectedLeptons (muon SFs) and event._allJets (jet veto map)
+        for mod in self._modules.values():
+            assert mod.analyze(event)
+
     def loadGenHistory(self, event, fatjets):
         # gen matching
         if not self.isMC:
@@ -392,17 +372,30 @@ class HeavyFlavBaseProducer(Module, object):
             fj.genT, fj.dr_T = closest(fj, hadGenTops)
             fj.genLepT, fj.dr_LepT = closest(fj, lepGenTops)
 
-    #TODO: check which mass variable is used in the main analysis
-    def evalMassRegression(self, event, jets):
+    def evalTagger(self, jets):
+        # same as NanoTrees vhTreeProducer._evalTagger (nanoV15)
         for j in jets:
-            if self._opts['run_mass_regression']:
-                outputs = [p.predict_with_cache(self.tagInfoMaker, event.idx, j.idx, j) for p in self.pnMassRegressions]
-                j.regressed_mass = ensemble(outputs, np.median)['mass']
-            else:
-                try:
-                    j.regressed_mass = j.ParticleNetMD_mass
-                except RuntimeError:
-                    j.regressed_mass = 0
+            j.pn_Xbb = j.ParticleNetMD_probXbb
+            j.pn_Xcc = j.ParticleNetMD_probXcc
+            j.pn_Xqq = j.ParticleNetMD_probXqq
+            j.pn_QCD = convert_prob(j, None, prefix='ParticleNetMD_prob')
+            j.pn_XbbVsQCD = convert_prob(j, ['Xbb'], ['QCD'], prefix='pn_')
+            j.pn_XccVsQCD = convert_prob(j, ['Xcc'], ['QCD'], prefix='pn_')
+            j.pn_XccOrXqqVsQCD = convert_prob(j, ['Xcc', 'Xqq'], ['QCD'], prefix='pn_')
+            j.part_HbbVsQCD = convert_prob(j, ['Xbb'], ['QCD'], prefix='ParTv3_prob')
+            j.part_HccVsQCD = convert_prob(j, ['Xcc'], ['QCD'], prefix='ParTv3_prob')
+            j.part_TVsQCD = convert_prob(j, ['TopbWqq', 'TopbWq'], ['QCD'], prefix='ParTv3_prob')
+
+    def evalMassRegression(self, event, jets):
+        # same as NanoTrees vhTreeProducer._evalMassRegression (nanoV15)
+        for j in jets:
+            j.masses = {
+                'sdmass': j.msoftdrop,
+                'regressed_mass': j.ParticleNetMD_mass,
+                'ParT_resonanceMass': j.ParTv3_massCorrResonance * j.mass * (1. - j.rawFactor),
+                'ParT_genericMass': j.ParTv3_massCorrGeneric * j.mass * (1. - j.rawFactor),
+                'ParT_X2pMass': j.ParTv3_massCorrX2p * j.mass * (1. - j.rawFactor),
+            }
 
     def fillBaseEventInfo(self, event):
         self.out.fillBranch("jetR", self._jetConeSize)
@@ -440,18 +433,11 @@ class HeavyFlavBaseProducer(Module, object):
         self.out.fillBranch("met", event.met.pt)
         self.out.fillBranch("metphi", event.met.phi)
 
-    def _get_filler(self, obj):
-
-        def filler(branch, value, default=0):
-            self.out.fillBranch(branch, value if obj else default)
-
-        return filler
-
     def fillFatJetInfo(self, event, fatjets):
-        for idx in ([1, 2] if self._channel in ['qcd', 'mutagged'] else [1]):
+        for idx in [1]:
             prefix = 'fj_%d_' % idx
 
-            if len(fatjets) <= idx - 1 or not fatjets[idx - 1].is_qualified:
+            if len(fatjets) <= idx - 1:
                 # fill zeros if fatjet fails probe selection
                 for b in self.out._branches.keys():
                     if b.startswith(prefix):
@@ -461,47 +447,38 @@ class HeavyFlavBaseProducer(Module, object):
             fj = fatjets[idx - 1]
 
             # fatjet kinematics
-            #self.out.fillBranch(prefix + "is_qualified", fj.is_qualified)
             self.out.fillBranch(prefix + "pt", fj.pt)
             self.out.fillBranch(prefix + "eta", fj.eta)
             self.out.fillBranch(prefix + "phi", fj.phi)
             self.out.fillBranch(prefix + "rawmass", fj.mass)
-            self.out.fillBranch(prefix + "sdmass", fj.msoftdrop)
-            self.out.fillBranch(prefix + "regressed_mass", fj.regressed_mass)
-            #self.out.fillBranch(prefix + "tau21", fj.tau2 / fj.tau1 if fj.tau1 > 0 else 99)
-            #self.out.fillBranch(prefix + "tau32", fj.tau3 / fj.tau2 if fj.tau2 > 0 else 99)
-            try:
-                # need to be synchronized withh the main analysis
-                self.out.fillBranch(prefix + "ParT_HccVsQCD", convert_prob(fj, ['Hcc'], None, prefix='ParT_prob'))
-                self.out.fillBranch(prefix + "ParT_HbbVsQCD", convert_prob(fj, ['Hbb'], None, prefix='ParT_prob'))
-                self.out.fillBranch(prefix + "ParT_TVsQCD", convert_prob(fj, ['TopbWcs', 'TopbWqq', 'TopbWc', 'TopbWs', 'TopbWq','TopWcs', 'TopWqq'], None, prefix='ParT_prob'))
+            self.out.fillBranch(prefix + "tau21", fj.tau2 / fj.tau1 if fj.tau1 > 0 else 99)
+            self.out.fillBranch(prefix + "tau32", fj.tau3 / fj.tau2 if fj.tau2 > 0 else 99)
+            self.out.fillBranch(prefix + "nsubjets", len(fj.subjets))
 
-            except RuntimeError:
-                self.out.fillBranch(prefix + "ParT_HccVsQCD", -1)
-                self.out.fillBranch(prefix + "ParT_HbbVsQCD", -1)
-                self.out.fillBranch(prefix + "ParT_TopVsQCD", -1)
+            for name, val in fj.masses.items():
+                self.out.fillBranch(prefix + name, val)
 
             # ParticleNet-MD
             self.out.fillBranch(prefix + "ParticleNetMD_Xbb", fj.pn_Xbb)
             self.out.fillBranch(prefix + "ParticleNetMD_Xcc", fj.pn_Xcc)
             self.out.fillBranch(prefix + "ParticleNetMD_Xqq", fj.pn_Xqq)
-            #self.out.fillBranch(prefix + "ParticleNetMD_QCD", fj.pn_QCD)
+            self.out.fillBranch(prefix + "ParticleNetMD_QCD", fj.pn_QCD)
             self.out.fillBranch(prefix + "ParticleNetMD_XbbVsQCD", fj.pn_XbbVsQCD)
             self.out.fillBranch(prefix + "ParticleNetMD_XccVsQCD", fj.pn_XccVsQCD)
             self.out.fillBranch(prefix + "ParticleNetMD_XccOrXqqVsQCD", fj.pn_XccOrXqqVsQCD)
 
-            #ParT
-            self.out.fillBranch(prefix + "ParT_Hbb", fj.pt_Hbb)
-            self.out.fillBranch(prefix + "ParT_Hcc", fj.pt_Hcc)
-            self.out.fillBranch(prefix + "ParT_Hqq", fj.pt_Hqq)
-
-            try:
-                self.out.fillBranch(prefix + "ParticleNet_mass", fj.particleNet_mass)
-            except RuntimeError:
-                self.out.fillBranch(prefix + "ParticleNet_mass", -1)
+            # ParTv3
+            self.out.fillBranch(prefix + "ParT_HbbVsQCD", fj.part_HbbVsQCD)
+            self.out.fillBranch(prefix + "ParT_HccVsQCD", fj.part_HccVsQCD)
+            self.out.fillBranch(prefix + "ParT_TVsQCD", fj.part_TVsQCD)
+            self.out.fillBranch(prefix + "ParT_QCD", fj.ParTv3_probQCD)
+            for score in self._part_scores:
+                self.out.fillBranch(prefix + "ParT_" + score, getattr(fj, 'ParTv3_prob' + score))
 
             # matching variables
             if self.isMC:
+                self.out.fillBranch(prefix + "nbhadrons", fj.nBHadrons)
+                self.out.fillBranch(prefix + "nchadrons", fj.nCHadrons)
 
                 # info of the closest hadGenH
                 self.out.fillBranch(prefix + "dr_H", fj.dr_H)

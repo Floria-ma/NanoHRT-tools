@@ -1,14 +1,78 @@
 # PFCands
 dropmatch n?PFCands_.+
 
+# SV
+drop SV_*
+
+# AK8 jets
+dropmatch n?FatJet_.+
+# keep the FatJet branches needed by AK15patcher to compute missing AK15Puppi variables
+keepmatch FatJet_(pt|eta|phi)
+keepmatch FatJet_(chHEF|neHEF|chEmEF|neEmEF|muEF)
+keepmatch FatJet_(chMultiplicity|neMultiplicity)
+dropmatch n?GenJetAK8_.+
+dropmatch n?SubJet_.+
+dropmatch n?SubGenJetAK8_.+
+
 # AK4 jets
 dropmatch Jet_(b|c)Reg(Corr|res)
 drop Jet_*EF
 keep Jet_*EmEF
+keep Jet_chHEF
+keep Jet_neHEF
+keep Jet_muEF
+drop Jet_btag*
+keep Jet_btagUParTAK4B
+
+# Electron
+drop Electron_*
+keep Electron_pt
+keep Electron_eta
+keep Electron_phi
+keep Electron_mass
+keep Electron_eCorr
+keep Electron_deltaEtaSC
+keep Electron_dxy
+keep Electron_dz
+keep Electron_cutBased
+keep Electron_mvaIso_WP*
+keep Electron_mvaIso
+keep Electron_pfRelIso03_all
+keep Electron_pfRelIso03_chg
+keep Electron_miniPFRelIso_all
+keep Electron_miniPFRelIso_chg
+keep Electron_pdgId
+keep Electron_charge
+keep Electron_genPartIdx
+keep Electron_r9
+keep Electron_seedGain
+
+# Muon
+drop Muon_*
+keep Muon_pt
+keep Muon_eta
+keep Muon_phi
+keep Muon_mass
+keep Muon_dxy
+keep Muon_dz
+keep Muon_dxybs
+keep Muon_looseId
+keep Muon_mediumId
+keep Muon_tightId
+keep Muon_pfRelIso03_all
+keep Muon_pfRelIso03_chg
+keep Muon_pfRelIso04_all
+keep Muon_miniPFRelIso_all
+keep Muon_pdgId
+keep Muon_charge
+keep Muon_genPartIdx
+keep Muon_nTrackerLayers
+keep Muon_pfIsoId
 
 # objects
 dropmatch n?boostedTau_.+
 dropmatch n?Tau_.+
+dropmatch n?Photon_.+
 dropmatch n?SoftActivity.+
 dropmatch n?FsrPhoton_.+
 dropmatch n?IsoTrack_.+
@@ -20,19 +84,25 @@ keep HLT_Iso*Mu24
 keep HLT_IsoMu27
 keep HLT_*Mu50
 keep HLT_*Mu100
+keep HLT_Mu17_TrkIsoVVL_Mu8_TrkIsoVVL_DZ_Mass3p8
 keep HLT_Ele27_WPTight_Gsf
+keep HLT_Ele30_WPTight_Gsf
 keep HLT_Ele32_WPTight_Gsf
 keep HLT_Ele32_WPTight_Gsf_L1DoubleEG
+keep HLT_Ele23_Ele12_CaloIdL_TrackIdL_IsoVL
 keep HLT_Ele35_WPTight_Gsf
 keep HLT_PFMET*_PFMHT*_IDTight*
-keep HLT_Photon175
-keep HLT_Photon200
-keep HLT_BTagMu_*Jet300_Mu5*
 keepmatch HLT_PFHT[0-9]+
 
 # L1/TrigObj
-dropmatch n?L1_.+
-dropmatch n?TrigObj_.+
+#dropmatch n?L1_.+
+keep L1_*EG*
+drop TrigObj_*
+keep TrigObj_pt
+keep TrigObj_eta
+keep TrigObj_phi
+keep TrigObj_id
+keep TrigObj_filterBits
 
 # GEN
 dropmatch n?GenDressedLepton_.+
@@ -42,7 +112,7 @@ dropmatch n?Generator_.+
 dropmatch n?LHEReweightingWeight
 dropmatch n?HTXS_.+
 dropmatch n?GenIsolatedPhoton_.+
-dropmatch n?PuppiMET_.+
 dropmatch n?CaloMET_.+
 dropmatch n?ChsMET_.+
-dropmatch n?RawPuppiMET_.+
+keep LHE_Vpt
+keep LHE_NpNLO

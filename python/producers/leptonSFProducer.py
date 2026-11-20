@@ -1,5 +1,6 @@
 import numpy as np
 import os
+import glob
 import correctionlib
 import ROOT
 ROOT.PyConfig.IgnoreCommandLineOptions = True
@@ -9,7 +10,6 @@ from ..helpers.utils import deltaR
 
 era_dict = {2015: '2016preVFP_UL', 2016: '2016postVFP_UL', 2017: '2017_UL', 2018: '2018_UL',
             20220: '2022_Summer22', 20221: '2022_Summer22EE', 20230: '2023_Summer23', 20231: '2023_Summer23BPix', 2024: '2024_Summer24'}
-
 
 #keys for egamma SFs
 era_label =  {2015: '2016preVFP', 2016: '2016postVFP', 2017: '2017', 2018: '2018',
@@ -65,7 +65,7 @@ class ElectronSFProducer(Module, object):
         self.year = year
         self.era = era_dict[self.year]
         if self.year<=2018:
-            correction_file = f'/cvmfs/cms.cern.ch/rsync/cms-nanoAOD/jsonpog-integration/POG/EGM/{self.era}/electron.json.gz'            
+            correction_file = glob.glob(f'/cvmfs/cms-griddata.cern.ch/cat/metadata/EGM/*-{self.era.replace("_", "-")}-NanoAODv9/latest/electron.json.gz')[0]
             self.corr = correctionlib.CorrectionSet.from_file(correction_file)['UL-Electron-ID-SF']
         elif self.year==2024:
             # the latest central EGM metadata on cvmfs, key '2024Prompt'
@@ -74,7 +74,7 @@ class ElectronSFProducer(Module, object):
             #correction_file2 = f'/cvmfs/cms.cern.ch/rsync/cms-nanoAOD/jsonpog-integration/POG/EGM/{self.era}/electronID_v1.json.gz'
             #self.corr2 = correctionlib.CorrectionSet.from_file(correction_file2)['Electron-ID-SF']
         else:
-            correction_file = f'/cvmfs/cms.cern.ch/rsync/cms-nanoAOD/jsonpog-integration/POG/EGM/{self.era}/electron.json.gz'
+            correction_file = glob.glob(f'/cvmfs/cms-griddata.cern.ch/cat/metadata/EGM/*-{self.era.split("_")[1]}-NanoAODv12/latest/electron.json.gz')[0]
             self.corr = correctionlib.CorrectionSet.from_file(correction_file)['Electron-ID-SF']
 
         self._opts = {'fillSystWeights': True}
@@ -92,13 +92,15 @@ class ElectronSFProducer(Module, object):
 
         wp = None
         if sf_type == 'Reco':
-            if lep.pt < 20:
+            if self.year <= 2018:
+                wp = 'RecoBelow20' if lep.pt < 20 else 'RecoAbove20'
+            elif lep.pt < 20:
                 wp = 'RecoBelow20'
-            elif 20 <= lep.pt < 75:
+            elif lep.pt < 75:
                 wp = 'Reco20to75'
             else:
                 wp = 'RecoAbove75'
-            
+
         elif sf_type == 'ID':
             if self._wp_ID=="Tight":
                 assert lep.mvaIso_WP80
@@ -123,7 +125,7 @@ class ElectronSFProducer(Module, object):
             #                              for syst in ('sf', 'sfup', 'sfdown')])
                 
         else:
-            scale_factors = np.array([self.corr.evaluate(label, syst, self._wp_ID, lep.etaSC, lep.pt)
+            scale_factors = np.array([self.corr.evaluate(label, syst, wp, lep.etaSC, lep.pt)
                                       for syst in ('sf', 'sfup', 'sfdown')])
         # debug(f'Electron pt:{lep.pt:.1f}, etaSC:{lep.etaSC:.2f}, {wp}, SF({sf_type}) = {scale_factors} (nom, up, down)')
         return scale_factors
@@ -213,10 +215,14 @@ class MuonSFProducer(Module, object):
                 assert lep.pfIsoId>=5
             elif self._wp_Iso=="Loose": # cut at 0.25
                 assert lep.pfIsoId>=2
+            elif self._wp_Iso=="TightMini": # miniPFRelIso_all < 0.10 (HRT muon channel)
+                assert lep.miniPFRelIso_all<0.10
             else:
                 raise NameError(f'mu isolation working point "f{self._wp_Iso}" not supported')
 
-            if self.year<=2018:
+            if self._wp_Iso=="TightMini":
+                key = f'NUM_TightMiniIso_DEN_{self._wp_ID}ID'
+            elif self.year<=2018:
                 if self._wp_ID=="Tight":
                     key = f'NUM_{self._wp_Iso}RelIso_DEN_TightIDandIPCut'
                 else:
@@ -491,17 +497,25 @@ class TriggerSF(Module, object):
             EFFs=[]
             for lep in event.selectedLeptons[:2]:
                 if not self.hasTrigObjpT:
-                    # no trigger object pT, no matching possible: SFs stays empty
-                    # TODO: discuss how to fix this
-                    break
+                    # no trigger object kinematics, no matching possible:
+                    # assume every lepton above the HLT threshold fired the trigger
+                    if fl==13 and lep.pt > self.muptmin:
+                        SFs.append( self.get_muon_trigger_SF(lep.eta, lep.pt) )
+                        EFFs.append( self.get_muon_MCeff(lep.eta, lep.pt) )
+                    elif fl==11 and lep.pt > self.eleptmin:
+                        SFs.append( self.get_ele_trigger_SF(lep.etaSC, lep.pt) )
+                        EFFs.append( self.get_ele_MCeff(lep.etaSC, lep.pt) )
+                    continue
                 for trigObj in event.trigobjs:
                     if abs(trigObj.id)!=fl: # trigobj must be an electron or a muon
                         continue
                     if fl==11:
-                        if not(trigObj.pt>self.eleptmin and trigObj.filterBits&2): # pt thr and tight id
+                        #if not(trigObj.pt>self.eleptmin and trigObj.filterBits&2): # pt thr and tight id
+                        if not(trigObj.filterBits&2):
                             continue
                     elif fl==13:
-                        if not( trigObj.pt>self.muptmin and trigObj.filterBits&2): # pt thr and isolation
+                        #if not( trigObj.pt>self.muptmin and trigObj.filterBits&2): # pt thr and isolation
+                        if not( trigObj.filterBits&2):
                              continue
                     if deltaR(lep,trigObj)<0.1: # deltaR matching
                         if fl==13:

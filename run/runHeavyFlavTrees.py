@@ -13,9 +13,10 @@ hrt_cfgname = 'heavyFlavSFTree_cfg.json'
 default_config = {'sfbdt_threshold': -99,
                   'run_tagger': False, 'tagger_versions': ['V02b', 'V02c', 'V02d'],
                   'run_mass_regression': False, 'mass_regression_versions': ['V01a', 'V01b', 'V01c'],
-                  'jec': False, 'jes': None, 'jes_source': '', 'jes_uncertainty_file_prefix': '',
+                  # jec=True: re-apply JEC on data and MC, as in the NanoTrees 2024 production
+                  'jec': True, 'jes': None, 'jes_source': '', 'jes_uncertainty_file_prefix': '',
                   'jer': 'nominal', 'jmr': None, 'met_unclustered': None, 'smearMET': False, 'applyHEMUnc': False,
-                  'jesr_extra_br': False,'nanoV15':False}
+                  'nanoV15':False}
 
 #cut_dict_ak8 = {
 #    'photon': 'Sum$(Photon_pt>200 && Photon_cutBased>=2 && Photon_electronVeto)>0 && nFatJet>0',
@@ -52,16 +53,6 @@ golden_json = {
 def _process(args):
     default_config['jetType'] = args.jet_type
     default_config['nanoV15'] = args.nanoV15
-    if args.run_tagger:
-        default_config['run_tagger'] = True
-        if args.jet_type == 'ak8':
-            raise NotImplementedError('No training for ak8')
-        logging.info('Will run tagger version(s): %s' % ','.join(default_config['tagger_versions']))
-    if args.run_mass_regression:
-        default_config['run_mass_regression'] = True
-        if args.jet_type == 'ak8':
-            default_config['mass_regression_versions'] = ['ak8V01a', 'ak8V01b', 'ak8V01c']
-        logging.info('Will run mass regression version(s): %s' % ','.join(default_config['mass_regression_versions']))
 
     year = int(args.year)
     channel = args.channel
@@ -90,23 +81,14 @@ def _process(args):
     if args.jet_type == 'ak15':
         args.cut = cut_dict_ak15[channel]
     else:
-        args.cut = cut_dict_ak8[channel]
+        #args.cut = cut_dict_ak8[channel]
+        print("WARNING: should use ak15 for heavy flavor trees")
 
-    args.imports = [('PhysicsTools.NanoHRTTools.producers.HeavyFlavSFTreeProducer', 'heavyFlavSFTreeFromConfig')]
-    
-    if year == 2015:
-        PUyear = 2016
-    elif year == 2021:
-        PUyear = 2022
-    elif year == 2024:
-        PUyear = 2024
-    else:
-        PUyear = year
+    args.imports = [('PhysicsTools.NanoHRTTools.producers.HeavyFlavMuonSampleProducer', 'heavyFlavSFTreeFromConfig')]
 
+    # PU weight is computed inside the producer (producers/puWeightProducer.py, as in NanoTrees)
     if not args.run_data:
-        args.imports.extend([('PhysicsTools.NanoAODTools.postprocessing.modules.common.puWeightProducer',
-                              'puWeight_UL%d' % PUyear),
-                             ('PhysicsTools.NanoHRTTools.producers.topPtWeightProducer', 'topPtWeight')])
+        args.imports.extend([('PhysicsTools.NanoHRTTools.producers.topPtWeightProducer', 'topPtWeight')])
 
     # data, or just nominal MC
     if args.run_data or not args.run_syst:
@@ -132,7 +114,7 @@ def _process(args):
         opts.branchsel_out = 'keep_and_drop_output_LHEweights.txt'
         run(opts, configs={hrt_cfgname: cfg})
 
-        JES up/down
+        # JES up/down
         for variation in ['up', 'down']:
            syst_name = 'jes_%s' % variation
            logging.info('Start making %s trees...' % syst_name)
@@ -143,7 +125,7 @@ def _process(args):
            opts.jobdir = os.path.join(os.path.dirname(opts.jobdir), syst_name)
            run(opts, configs={hrt_cfgname: cfg})
 
-        JER up/down
+        # JER up/down
         for variation in ['up', 'down']:
            syst_name = 'jer_%s' % variation
            logging.info('Start making %s trees...' % syst_name)

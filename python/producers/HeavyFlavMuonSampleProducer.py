@@ -43,18 +43,18 @@ class MuonSampleProducer(HeavyFlavBaseProducer):
         self.correctJetsAndMET(event)
 
         # met selection
-        if event.PuppiMET.pt < 50.0:
+        if event.met.pt < 50.0:
             return False
 
         # leptonic W pt cut
         event.mu = event.muons[0]
-        event.leptonicW = polarP4(event.mu) + event.PuppiMET.p4()
+        event.leptonicW = polarP4(event.mu) + event.met.p4()
         if event.leptonicW.Pt() < 100.0:
             return False
 
         # at least one b-jet, in the same hemisphere of the muon
-        event.bjets = [j for j in event.ak4jets if j.btagPNetB > self.PNet_WP_M and
-                        abs(deltaPhi(j, event.mu)) < 2]        
+        event.bjets = [j for j in event.ak4jets if getattr(j, self.btag_name) > self.btag_WP_M and
+                        abs(deltaPhi(j, event.mu)) < 2]
         
         if len(event.bjets) == 0:
             return False
@@ -66,6 +66,7 @@ class MuonSampleProducer(HeavyFlavBaseProducer):
 
         probe_jets = probe_jets[:1]
         self.loadGenHistory(event, probe_jets)
+        self.evalTagger(probe_jets)
         self.evalMassRegression(event, probe_jets)
 
         # fill output branches
@@ -81,6 +82,10 @@ class MuonSampleProducer(HeavyFlavBaseProducer):
         self.out.fillBranch("muon_miniIso", event.mu.miniPFRelIso_all)
         self.out.fillBranch("leptonicW_pt", event.leptonicW.Pt())
 
+        # muon ID/iso SFs, PU weight, jet veto map
+        event.selectedLeptons = [event.mu]
+        self.runModules(event)
+
         return True
 
 
@@ -92,3 +97,13 @@ def MuonTree_2021(): return MuonSampleProducer(year=2021)
 def MuonTree_2022(): return MuonSampleProducer(year=2022)
 def MuonTree_2023(): return MuonSampleProducer(year=2023)
 def MuonTree_2024(): return MuonSampleProducer(year=2024)
+
+
+def heavyFlavSFTreeFromConfig():
+    import yaml
+    with open('heavyFlavSFTree_cfg.json') as f:
+        cfg = yaml.safe_load(f)
+    channel = cfg.pop('channel')
+    if channel != 'muon':
+        raise RuntimeError('Only the muon channel is implemented, got %s' % channel)
+    return MuonSampleProducer(**cfg)
